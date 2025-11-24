@@ -1,0 +1,245 @@
+@startuml SmartLocker_StateMachines
+
+title Smart Locker Concurrent State Machines
+
+!define MAIN_COLOR #4CAF50
+!define COMM_COLOR #2196F3
+!define SECURITY_COLOR #FF9800
+!define UI_COLOR #9C27B0
+
+' Main Locker State Machine
+package "Main Locker State Machine" MAIN_COLOR {
+  
+  state IDLE_AVAILABLE {
+    IDLE_AVAILABLE : Box Present
+    IDLE_AVAILABLE : Ready for Borrow
+  }
+  
+  state IDLE_OCCUPIED {
+    IDLE_OCCUPIED : Box Absent
+    IDLE_OCCUPIED : Ready for Return
+  }
+  
+  state AWAITING_ID {
+    AWAITING_ID : Collecting Student ID
+    AWAITING_ID : Timeout: 15s
+  }
+  
+  state AUTHENTICATING {
+    AUTHENTICATING : Waiting for Server
+    AUTHENTICATING : Timeout: 5s
+  }
+  
+  state BORROW_AUTHORIZED {
+    BORROW_AUTHORIZED : Unlocking Door
+  }
+  
+  state BORROW_IN_PROGRESS {
+    BORROW_IN_PROGRESS : Door Open
+    BORROW_IN_PROGRESS : Waiting for Box Removal
+    BORROW_IN_PROGRESS : Timeout: 10s
+  }
+  
+  state BORROW_COMPLETING {
+    BORROW_COMPLETING : Box Removed
+    BORROW_COMPLETING : Waiting for Door Close
+  }
+  
+  state RETURN_IN_PROGRESS {
+    RETURN_IN_PROGRESS : Door Open
+    RETURN_IN_PROGRESS : Waiting for Box Placement
+    RETURN_IN_PROGRESS : Timeout: 10s
+  }
+  
+  state RETURN_COMPLETING {
+    RETURN_COMPLETING : Box Placed
+    RETURN_COMPLETING : Waiting for Door Close
+  }
+  
+  state ERROR_STATE {
+    ERROR_STATE : System Error
+    ERROR_STATE : Press D for Maintenance
+  }
+  
+  state MAINTENANCE {
+    MAINTENANCE : Manual Control
+    MAINTENANCE : A=Unlock B=Lock D=Exit
+  }
+  
+  [*] --> IDLE_AVAILABLE : System Start\n(Box Present)
+  [*] --> IDLE_OCCUPIED : System Start\n(Box Absent)
+  
+  IDLE_AVAILABLE --> AWAITING_ID : Press #
+  AWAITING_ID --> AUTHENTICATING : Valid ID Entered
+  AWAITING_ID --> IDLE_AVAILABLE : Timeout/Cancel
+  
+  AUTHENTICATING --> BORROW_AUTHORIZED : Authorized
+  AUTHENTICATING --> IDLE_AVAILABLE : Denied/Timeout
+  
+  BORROW_AUTHORIZED --> BORROW_IN_PROGRESS : Door Unlocked
+  BORROW_IN_PROGRESS --> BORROW_COMPLETING : Box Removed
+  BORROW_IN_PROGRESS --> IDLE_AVAILABLE : Timeout
+  
+  BORROW_COMPLETING --> IDLE_OCCUPIED : Door Closed\n(Success)
+  BORROW_COMPLETING --> IDLE_AVAILABLE : Box Returned\n(Cancelled)
+  
+  IDLE_OCCUPIED --> RETURN_IN_PROGRESS : Press #
+  RETURN_IN_PROGRESS --> RETURN_COMPLETING : Box Placed
+  RETURN_IN_PROGRESS --> IDLE_OCCUPIED : Timeout
+  
+  RETURN_COMPLETING --> IDLE_AVAILABLE : Door Closed\n(Success)
+  RETURN_COMPLETING --> IDLE_OCCUPIED : Box Removed\n(Failed)
+  
+  ERROR_STATE --> MAINTENANCE : Press D
+  MAINTENANCE --> IDLE_AVAILABLE : Exit (Box Present)
+  MAINTENANCE --> IDLE_OCCUPIED : Exit (Box Absent)
+}
+
+' Communication State Machine
+package "Communication State Machine" COMM_COLOR {
+  
+  state COMM_IDLE {
+    COMM_IDLE : No Pending Requests
+  }
+  
+  state CONNECTING {
+    CONNECTING : Establishing BT Connection
+  }
+  
+  state SENDING_AUTH {
+    SENDING_AUTH : Transmitting ID
+  }
+  
+  state WAITING_RESPONSE {
+    WAITING_RESPONSE : Awaiting Server Reply
+  }
+  
+  state PROCESSING_RESPONSE {
+    PROCESSING_RESPONSE : Parsing Response
+  }
+  
+  state OFFLINE_MODE {
+    OFFLINE_MODE : Network Unavailable
+  }
+  
+  state COMM_ERROR {
+    COMM_ERROR : Communication Failed
+  }
+  
+  COMM_IDLE --> CONNECTING : Auth Request
+  CONNECTING --> SENDING_AUTH : Connected
+  CONNECTING --> OFFLINE_MODE : Connection Failed
+  
+  SENDING_AUTH --> WAITING_RESPONSE : Sent
+  SENDING_AUTH --> COMM_ERROR : Send Failed
+  
+  WAITING_RESPONSE --> PROCESSING_RESPONSE : Response Received
+  WAITING_RESPONSE --> COMM_ERROR : Timeout
+  
+  PROCESSING_RESPONSE --> COMM_IDLE : Complete
+  
+  OFFLINE_MODE --> COMM_IDLE : Processed
+  COMM_ERROR --> COMM_IDLE : Handled
+  
+  OFFLINE_MODE --> CONNECTING : Retry
+}
+
+' Security State Machine
+package "Security State Machine" SECURITY_COLOR {
+  
+  state DOOR_CLOSED_BOX_PRESENT {
+    DOOR_CLOSED_BOX_PRESENT : Normal Secured
+    DOOR_CLOSED_BOX_PRESENT : Box Available
+  }
+  
+  state DOOR_CLOSED_BOX_ABSENT {
+    DOOR_CLOSED_BOX_ABSENT : Normal Secured
+    DOOR_CLOSED_BOX_ABSENT : Box Borrowed
+  }
+  
+  state DOOR_OPEN_BOX_PRESENT {
+    DOOR_OPEN_BOX_PRESENT : Door Unlocked
+    DOOR_OPEN_BOX_PRESENT : Box Inside
+  }
+  
+  state DOOR_OPEN_BOX_ABSENT {
+    DOOR_OPEN_BOX_ABSENT : Door Unlocked
+    DOOR_OPEN_BOX_ABSENT : Box Removed
+  }
+  
+  state SENSOR_ERROR {
+    SENSOR_ERROR : Sensor Malfunction
+  }
+  
+  DOOR_CLOSED_BOX_PRESENT --> DOOR_OPEN_BOX_PRESENT : Door Opens
+  DOOR_OPEN_BOX_PRESENT --> DOOR_CLOSED_BOX_PRESENT : Door Closes
+  
+  DOOR_CLOSED_BOX_ABSENT --> DOOR_OPEN_BOX_ABSENT : Door Opens
+  DOOR_OPEN_BOX_ABSENT --> DOOR_CLOSED_BOX_ABSENT : Door Closes
+  
+  DOOR_OPEN_BOX_PRESENT --> DOOR_OPEN_BOX_ABSENT : Box Removed
+  DOOR_OPEN_BOX_ABSENT --> DOOR_OPEN_BOX_PRESENT : Box Placed
+  
+  DOOR_CLOSED_BOX_PRESENT --> DOOR_CLOSED_BOX_ABSENT : Forced Removal
+  DOOR_CLOSED_BOX_ABSENT --> DOOR_CLOSED_BOX_PRESENT : Box Returned
+}
+
+' UI State Machine
+package "UI State Machine" UI_COLOR {
+  
+  state DISPLAY_STATUS {
+    DISPLAY_STATUS : Show Current State
+    DISPLAY_STATUS : Auto-refresh 5s
+  }
+  
+  state INPUT_ACTIVE {
+    INPUT_ACTIVE : Keypad Input Mode
+    INPUT_ACTIVE : Show Input Buffer
+  }
+  
+  state SHOWING_MESSAGE {
+    SHOWING_MESSAGE : Temporary Message
+    SHOWING_MESSAGE : Timeout: 3s
+  }
+  
+  state ERROR_DISPLAY {
+    ERROR_DISPLAY : Error Message
+    ERROR_DISPLAY : Flash LED
+  }
+  
+  DISPLAY_STATUS --> INPUT_ACTIVE : Input Required
+  INPUT_ACTIVE --> DISPLAY_STATUS : Input Complete
+  
+  DISPLAY_STATUS --> SHOWING_MESSAGE : Status Change
+  SHOWING_MESSAGE --> DISPLAY_STATUS : Timeout
+  
+  DISPLAY_STATUS --> ERROR_DISPLAY : Error Occurred
+  ERROR_DISPLAY --> DISPLAY_STATUS : Error Cleared
+}
+
+' Inter-machine Communications (shown as notes)
+note right of AUTHENTICATING
+  **Triggers Comm SM:**
+  - Sends auth request
+  - Sets authPending flag
+end note
+
+note left of WAITING_RESPONSE
+  **Updates Main SM:**
+  - Sets authResult
+  - Clears authPending
+end note
+
+note right of BORROW_IN_PROGRESS
+  **Reads Security SM:**
+  - Monitors door state
+  - Detects box removal
+end note
+
+note left of DOOR_OPEN_BOX_ABSENT
+  **Triggers Main SM:**
+  - Advances borrow state
+  - Logs transaction
+end note
+
+@enduml
