@@ -31,11 +31,17 @@ constexpr int PIN_SERVO_LOCK      = 26;
 constexpr int DOOR_LOCKED_ANGLE    = 0;
 constexpr int DOOR_UNLOCKED_ANGLE  = 90;
 
-// System
-constexpr unsigned long DOOR_OPEN_TIMEOUT_MS = 10000;  // 10 seconds to grab/return box
-constexpr unsigned long INPUT_TIMEOUT_MS = 15000;      // 15 seconds for ID entry
-constexpr unsigned long AUTH_TIMEOUT_MS = 5000;        // 5 seconds for auth response
-constexpr unsigned long DISPLAY_MESSAGE_MS = 3000;     // 3 seconds for messages
-constexpr unsigned long SENSOR_DEBOUNCE_MS = 200;      // Debounce for IR sensors
-constexpr unsigned long BUZZER_BEEP_MS = 100;          // Short beep duration
-constexpr unsigned long BUZZER_LONG_MS = 500;          // Long beep duration
+// Timing
+constexpr unsigned long DOOR_OPEN_TIMEOUT_MS = 10000;   // 10 seconds to grab/return box
+constexpr unsigned long INPUT_TIMEOUT_MS = 15000;       // 15 seconds for ID entry
+constexpr unsigned long AUTH_TIMEOUT_MS = 10000;        // 10 seconds for auth response
+constexpr unsigned long DISPLAY_MESSAGE_MS = 3000;      // 3 seconds for messages
+constexpr unsigned long SENSOR_DEBOUNCE_MS = 200;       // Debounce for IR sensors
+constexpr unsigned long BT_CONNECT_TIMEOUT_MS = 8000;   // 8 seconds to connect to Pi
+constexpr unsigned long BT_RECONNECT_INTERVAL_MS = 30000; // Retry connection every 30s
+
+// Validation
+constexpr int MIN_STUDENT_ID_LENGTH = 8;  // Minimum digits for student ID
+constexpr int MAX_STUDENT_ID_LENGTH = 9; // Maximum digits for student ID
+
+constexpr const char* PI_BT_ADDRESS = "D8:3A:DD:D2:34:EC";

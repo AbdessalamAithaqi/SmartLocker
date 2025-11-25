@@ -36,23 +36,6 @@ enum class CommState {
   ERROR
 };
 
-// User Interface States
-enum class UIState {
-  DISPLAY_STATUS,
-  INPUT_ACTIVE,
-  SHOWING_MESSAGE,
-  ERROR_DISPLAY
-};
-
-// Physical Security States
-enum class SecurityState {
-  DOOR_CLOSED_BOX_PRESENT,
-  DOOR_CLOSED_BOX_ABSENT,
-  DOOR_OPEN_BOX_PRESENT,
-  DOOR_OPEN_BOX_ABSENT,
-  SENSOR_ERROR
-};
-
 // ============================================
 // GLOBAL SENSORS AND ACTUATORS
 // ============================================
@@ -63,15 +46,13 @@ RedLED redLed;
 DoorServo doorServo;
 BoxIR boxSensor;
 DoorIR doorSensor;
-LockerBluetooth bluetooth("SmartLocker");
+LockerBluetooth bluetooth(PI_BT_ADDRESS);  // Connect to Pi
 
 // ============================================
 // GLOBAL VARIABLES
 // ============================================
 LockerState currentLockerState = LockerState::IDLE_AVAILABLE;
 CommState currentCommState = CommState::IDLE;
-UIState currentUIState = UIState::DISPLAY_STATUS;
-SecurityState currentSecurityState = SecurityState::DOOR_CLOSED_BOX_PRESENT;
 
 // Timing variables
 unsigned long stateEntryTime = 0;
@@ -79,18 +60,26 @@ unsigned long lastSensorCheck = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long inputStartTime = 0;
 unsigned long authStartTime = 0;
-unsigned long messageDisplayTime = 0;
+unsigned long lastConnectionAttempt = 0;
+unsigned long lastStatusCheck = 0;
 
 // Data variables
 String currentStudentID = "";
 String inputBuffer = "";
-String displayMessage = "";
 String lastBorrowerID = "";
-bool isNetworkAvailable = true;
+bool isNetworkAvailable = false;  // Start as offline, will connect
 bool authorizationPending = false;
 bool authorizationResult = false;
 
-// Sensor debouncing
+// Sensor states
+enum class SecurityState {
+  DOOR_CLOSED_BOX_PRESENT,
+  DOOR_CLOSED_BOX_ABSENT,
+  DOOR_OPEN_BOX_PRESENT,
+  DOOR_OPEN_BOX_ABSENT
+};
+
+SecurityState currentSecurityState = SecurityState::DOOR_CLOSED_BOX_PRESENT;
 bool lastDoorState = false;
 bool lastBoxState = false;
 unsigned long doorDebounceTime = 0;
@@ -101,7 +90,15 @@ unsigned long boxDebounceTime = 0;
 // ============================================
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n\n===========================================");
   Serial.println("Smart Locker System Starting...");
+  Serial.println("===========================================");
+  
+  // Check if Pi address is set
+  if (String(PI_BT_ADDRESS) == "AA:BB:CC:DD:EE:FF") {
+    Serial.println("⚠️  WARNING: PI_BT_ADDRESS not set in config.h!");
+    Serial.println("   Run 'hcitool dev' on your Pi to get the MAC address");
+  }
   
   // Initialize hardware
   lcd.begin();
@@ -128,27 +125,82 @@ void setup() {
   // Set initial locker state based on box presence
   if (boxSensor.isBoxPresent()) {
     currentLockerState = LockerState::IDLE_AVAILABLE;
-    lcd.printLines("Ready", "Press # to start");
+    lcd.printLines("Ready", "Connecting to Pi");
   } else {
     currentLockerState = LockerState::IDLE_OCCUPIED;
-    lcd.printLines("Box Borrowed", "ID: " + lastBorrowerID);
+    lcd.printLines("Box Borrowed", "Connecting to Pi");
   }
   
-  Serial.println("System Ready");
+  // Try initial connection
+  Serial.println("Attempting initial connection to Pi...");
+  if (bluetooth.connect()) {
+    isNetworkAvailable = true;
+    Serial.println("✓ Initial connection successful");
+  } else {
+    Serial.println("✗ Initial connection failed - will retry");
+  }
+  
+  lastConnectionAttempt = millis();
+  Serial.println("System Ready\n");
 }
 
 // ============================================
 // MAIN LOOP
 // ============================================
 void loop() {
-  // Run concurrent state machines
-  updateSecurityState();      // Always monitor physical security
+  // Maintain connection
+  maintainConnection();
+  
+  // Run state machines
+  updateSecurityState();
   processLockerStateMachine();
   processCommStateMachine();
-  processUIStateMachine();
   
-  // Check for system-wide events
+  // Update status display periodically
+  if (millis() - lastDisplayUpdate > 10000) {
+    updateStatusDisplay();
+    lastDisplayUpdate = millis();
+  }
+  
+  // Check for emergency conditions
   handleEmergencyConditions();
+}
+
+// ============================================
+// CONNECTION MANAGEMENT
+// ============================================
+void maintainConnection() {
+  // Check connection status every 2 seconds
+  if (millis() - lastStatusCheck > 2000) {
+    lastStatusCheck = millis();
+    
+    bool wasAvailable = isNetworkAvailable;
+    isNetworkAvailable = bluetooth.isConnected();
+    
+    // Log status changes
+    if (wasAvailable != isNetworkAvailable) {
+      if (isNetworkAvailable) {
+        Serial.println("✓ Pi connection established");
+      } else {
+        Serial.println("✗ Pi connection lost");
+      }
+    }
+  }
+  
+  // Try to reconnect if disconnected (but not too often)
+  if (!isNetworkAvailable && 
+      currentCommState == CommState::IDLE &&
+      millis() - lastConnectionAttempt > BT_RECONNECT_INTERVAL_MS) {
+    
+    Serial.println("Attempting reconnection...");
+    if (bluetooth.connect()) {
+      isNetworkAvailable = true;
+      Serial.println("✓ Reconnection successful");
+    } else {
+      Serial.println("✗ Reconnection failed");
+    }
+    lastConnectionAttempt = millis();
+  }
 }
 
 // ============================================
@@ -169,7 +221,7 @@ void updateSecurityState() {
       lastDoorState = doorClosed;
       doorDebounceTime = millis();
     } else {
-      return; // Still debouncing
+      return;
     }
   }
   
@@ -178,7 +230,7 @@ void updateSecurityState() {
       lastBoxState = boxPresent;
       boxDebounceTime = millis();
     } else {
-      return; // Still debouncing
+      return;
     }
   }
   
@@ -195,8 +247,6 @@ void updateSecurityState() {
   }
   
   if (newState != currentSecurityState) {
-    Serial.print("Security State Change: ");
-    Serial.println(static_cast<int>(newState));
     currentSecurityState = newState;
   }
 }
@@ -256,27 +306,32 @@ void processLockerStateMachine() {
 // LOCKER STATE HANDLERS
 // ============================================
 void handleIdleAvailable() {
-  // Box is present, ready for borrowing
   char key = keypad.getKey();
   if (key == '#') {
-    transitionToState(LockerState::AWAITING_ID);
+    currentLockerState = LockerState::AWAITING_ID;
     inputBuffer = "";
     inputStartTime = millis();
     lcd.printLines("Enter ID:", "");
+    Serial.println("ID entry started");
   }
 }
 
 void handleIdleOccupied() {
-  // Box is borrowed, ready for return
   char key = keypad.getKey();
   if (key == '#') {
-    // For returns, we can proceed even offline
-    transitionToState(LockerState::RETURN_IN_PROGRESS);
+    // For returns, proceed even offline
+    currentLockerState = LockerState::RETURN_IN_PROGRESS;
     doorServo.unlock();
     lcd.printLines("Door Unlocked", "Place box & close");
     greenLed.off();
     redLed.on();
     stateEntryTime = millis();
+    Serial.println("Return initiated");
+    
+    // Send return message if connected
+    if (isNetworkAvailable && lastBorrowerID != "") {
+      bluetooth.sendCode("RETURN," + lastBorrowerID);
+    }
   }
 }
 
@@ -284,7 +339,10 @@ void handleAwaitingID() {
   // Check for timeout
   if (millis() - inputStartTime > INPUT_TIMEOUT_MS) {
     lcd.printLines("Timeout", "Try again");
-    transitionToState(LockerState::IDLE_AVAILABLE);
+    delay(2000);
+    currentLockerState = LockerState::IDLE_AVAILABLE;
+    updateStatusDisplay();
+    Serial.println("ID entry timeout");
     return;
   }
   
@@ -294,12 +352,15 @@ void handleAwaitingID() {
       inputBuffer += key;
       lcd.printLines("Enter ID:", inputBuffer);
     } else if (key == '#') {
-      if (inputBuffer.length() >= 8) { // Minimum ID length
+      if (inputBuffer.length() >= MIN_STUDENT_ID_LENGTH && 
+          inputBuffer.length() <= MAX_STUDENT_ID_LENGTH) {
         currentStudentID = inputBuffer;
-        transitionToState(LockerState::AUTHENTICATING);
+        Serial.print("ID entered: ");
+        Serial.println(currentStudentID);
+        currentLockerState = LockerState::AUTHENTICATING;
         requestAuthorization(currentStudentID);
       } else {
-        lcd.printLines("Invalid ID", "Min 8 digits");
+        lcd.printLines("Invalid ID", "4-12 digits");
         delay(2000);
         lcd.printLines("Enter ID:", "");
         inputBuffer = "";
@@ -314,26 +375,32 @@ void handleAwaitingID() {
 }
 
 void handleAuthenticating() {
-  // This state waits for the comm state machine to get a response
-  if (authorizationPending == false) {
+  // Wait for comm state machine to complete
+  if (!authorizationPending) {
     if (authorizationResult) {
-      transitionToState(LockerState::BORROW_AUTHORIZED);
+      Serial.println("✓ Authorization approved");
+      currentLockerState = LockerState::BORROW_AUTHORIZED;
     } else {
+      Serial.println("✗ Authorization denied");
       lcd.printLines("Access Denied", "Try again");
-      delay(2000);
-      transitionToState(LockerState::IDLE_AVAILABLE);
+      delay(3000);
+      currentLockerState = LockerState::IDLE_AVAILABLE;
+      updateStatusDisplay();
     }
   }
   
   // Check for timeout
   if (millis() - authStartTime > AUTH_TIMEOUT_MS) {
+    Serial.println("✗ Authorization timeout");
+    authorizationPending = false;
     if (isNetworkAvailable) {
       lcd.printLines("Network Error", "Try again");
     } else {
       lcd.printLines("Offline Mode", "Borrow denied");
     }
-    delay(2000);
-    transitionToState(LockerState::IDLE_AVAILABLE);
+    delay(3000);
+    currentLockerState = LockerState::IDLE_AVAILABLE;
+    updateStatusDisplay();
   }
 }
 
@@ -343,22 +410,28 @@ void handleBorrowAuthorized() {
   greenLed.off();
   redLed.on();
   stateEntryTime = millis();
-  transitionToState(LockerState::BORROW_IN_PROGRESS);
+  currentLockerState = LockerState::BORROW_IN_PROGRESS;
+  Serial.println("Door unlocked for borrow");
 }
 
 void handleBorrowInProgress() {
-  // Wait for door to open and box to be removed
+  // Wait for box to be removed
   if (currentSecurityState == SecurityState::DOOR_OPEN_BOX_ABSENT) {
     lcd.printLines("Box removed", "Please close door");
-    transitionToState(LockerState::BORROW_COMPLETING);
+    currentLockerState = LockerState::BORROW_COMPLETING;
+    Serial.println("Box removed");
   }
   
   // Timeout check
   if (millis() - stateEntryTime > DOOR_OPEN_TIMEOUT_MS) {
     doorServo.lock();
     lcd.printLines("Timeout", "Transaction cancelled");
+    greenLed.on();
+    redLed.off();
     delay(2000);
-    transitionToState(LockerState::IDLE_AVAILABLE);
+    currentLockerState = LockerState::IDLE_AVAILABLE;
+    updateStatusDisplay();
+    Serial.println("Borrow timeout");
   }
 }
 
@@ -369,22 +442,24 @@ void handleBorrowCompleting() {
     lcd.printLines("Borrow Complete", "ID: " + currentStudentID);
     greenLed.on();
     redLed.off();
-    
-    // Log the transaction
-    logTransaction("BORROW", currentStudentID);
+    Serial.print("✓ Borrow complete: ");
+    Serial.println(currentStudentID);
     
     delay(3000);
-    transitionToState(LockerState::IDLE_OCCUPIED);
+    currentLockerState = LockerState::IDLE_OCCUPIED;
+    updateStatusDisplay();
   }
   
-  // Check if box was put back (cancelled transaction)
+  // Check if box was put back (cancelled)
   if (currentSecurityState == SecurityState::DOOR_CLOSED_BOX_PRESENT) {
     doorServo.lock();
     lcd.printLines("Cancelled", "Box detected");
     greenLed.on();
     redLed.off();
+    Serial.println("Borrow cancelled");
     delay(2000);
-    transitionToState(LockerState::IDLE_AVAILABLE);
+    currentLockerState = LockerState::IDLE_AVAILABLE;
+    updateStatusDisplay();
   }
 }
 
@@ -392,15 +467,20 @@ void handleReturnInProgress() {
   // Wait for box to be placed and door closed
   if (currentSecurityState == SecurityState::DOOR_OPEN_BOX_PRESENT) {
     lcd.printLines("Box detected", "Please close door");
-    transitionToState(LockerState::RETURN_COMPLETING);
+    currentLockerState = LockerState::RETURN_COMPLETING;
+    Serial.println("Box placed for return");
   }
   
   // Timeout check
   if (millis() - stateEntryTime > DOOR_OPEN_TIMEOUT_MS) {
     doorServo.lock();
     lcd.printLines("Timeout", "Try again");
+    greenLed.on();
+    redLed.off();
     delay(2000);
-    transitionToState(LockerState::IDLE_OCCUPIED);
+    currentLockerState = LockerState::IDLE_OCCUPIED;
+    updateStatusDisplay();
+    Serial.println("Return timeout");
   }
 }
 
@@ -410,26 +490,28 @@ void handleReturnCompleting() {
     lcd.printLines("Return Complete", "Thank you!");
     greenLed.on();
     redLed.off();
-    
-    // Log the transaction
-    logTransaction("RETURN", lastBorrowerID);
+    Serial.println("✓ Return complete");
     
     lastBorrowerID = "";
     delay(3000);
-    transitionToState(LockerState::IDLE_AVAILABLE);
+    currentLockerState = LockerState::IDLE_AVAILABLE;
+    updateStatusDisplay();
   }
   
   // Check if box was removed again
   if (currentSecurityState == SecurityState::DOOR_CLOSED_BOX_ABSENT) {
     doorServo.lock();
     lcd.printLines("Return Failed", "Box not detected");
+    greenLed.on();
+    redLed.off();
+    Serial.println("Return failed - no box");
     delay(2000);
-    transitionToState(LockerState::IDLE_OCCUPIED);
+    currentLockerState = LockerState::IDLE_OCCUPIED;
+    updateStatusDisplay();
   }
 }
 
 void handleErrorState() {
-  // Flash red LED
   static unsigned long lastFlash = 0;
   if (millis() - lastFlash > 500) {
     redLed.on();
@@ -438,31 +520,34 @@ void handleErrorState() {
     lastFlash = millis();
   }
   
-  // Check for recovery conditions
-  if (keypad.getKey() == 'D') { // Admin override
-    transitionToState(LockerState::MAINTENANCE);
+  if (keypad.getKey() == 'D') {
+    currentLockerState = LockerState::MAINTENANCE;
+    Serial.println("Entering maintenance mode");
   }
 }
 
 void handleMaintenance() {
-  lcd.printLines("Maintenance Mode", "Press D to exit");
+  lcd.printLines("Maintenance Mode", "D=exit A=unlock");
   
-  // Allow manual control in maintenance mode
   char key = keypad.getKey();
   if (key == 'A') {
     doorServo.unlock();
     lcd.printLines("Door Unlocked", "Manual control");
+    Serial.println("Manual unlock");
   } else if (key == 'B') {
     doorServo.lock();
     lcd.printLines("Door Locked", "Manual control");
+    Serial.println("Manual lock");
   } else if (key == 'D') {
-    // Exit maintenance mode
+    // Exit maintenance
     updateSecurityState();
     if (boxSensor.isBoxPresent()) {
-      transitionToState(LockerState::IDLE_AVAILABLE);
+      currentLockerState = LockerState::IDLE_AVAILABLE;
     } else {
-      transitionToState(LockerState::IDLE_OCCUPIED);
+      currentLockerState = LockerState::IDLE_OCCUPIED;
     }
+    updateStatusDisplay();
+    Serial.println("Exiting maintenance mode");
   }
 }
 
@@ -472,23 +557,27 @@ void handleMaintenance() {
 void processCommStateMachine() {
   switch (currentCommState) {
     case CommState::IDLE:
-      // Nothing to do, waiting for requests
+      // Nothing to do
       break;
       
     case CommState::CONNECTING:
       if (bluetooth.isConnected()) {
+        Serial.println("✓ Connected, sending auth");
         currentCommState = CommState::SENDING_AUTH;
-      } else if (millis() - authStartTime > 2000) {
-        currentCommState = CommState::OFFLINE_MODE;
+      } else if (millis() - authStartTime > BT_CONNECT_TIMEOUT_MS) {
+        Serial.println("✗ Connection timeout");
+        currentCommState = CommState::ERROR;
         isNetworkAvailable = false;
       }
       break;
       
     case CommState::SENDING_AUTH:
       if (bluetooth.sendCode(currentStudentID)) {
+        Serial.println("Auth request sent");
         currentCommState = CommState::WAITING_RESPONSE;
         authStartTime = millis();
       } else {
+        Serial.println("Failed to send auth");
         currentCommState = CommState::ERROR;
       }
       break;
@@ -497,6 +586,8 @@ void processCommStateMachine() {
       {
         String response = bluetooth.readResponse();
         if (response != "") {
+          Serial.print("Response: ");
+          Serial.println(response);
           currentCommState = CommState::PROCESSING_RESPONSE;
           if (response == "OK") {
             authorizationResult = true;
@@ -506,6 +597,7 @@ void processCommStateMachine() {
           authorizationPending = false;
           currentCommState = CommState::IDLE;
         } else if (millis() - authStartTime > AUTH_TIMEOUT_MS) {
+          Serial.println("Response timeout");
           currentCommState = CommState::ERROR;
           authorizationPending = false;
           authorizationResult = false;
@@ -514,12 +606,10 @@ void processCommStateMachine() {
       break;
       
     case CommState::PROCESSING_RESPONSE:
-      // Response already processed
       currentCommState = CommState::IDLE;
       break;
       
     case CommState::OFFLINE_MODE:
-      // In offline mode, deny new borrows but allow returns
       authorizationPending = false;
       authorizationResult = false;
       currentCommState = CommState::IDLE;
@@ -535,127 +625,64 @@ void processCommStateMachine() {
 }
 
 // ============================================
-// UI STATE MACHINE
-// ============================================
-void processUIStateMachine() {
-  switch (currentUIState) {
-    case UIState::DISPLAY_STATUS:
-      // Update display based on main state
-      if (millis() - lastDisplayUpdate > 5000) {
-        updateStatusDisplay();
-        lastDisplayUpdate = millis();
-      }
-      break;
-      
-    case UIState::INPUT_ACTIVE:
-      // Handled by main state machine
-      break;
-      
-    case UIState::SHOWING_MESSAGE:
-      if (millis() - messageDisplayTime > DISPLAY_MESSAGE_MS) {
-        currentUIState = UIState::DISPLAY_STATUS;
-      }
-      break;
-      
-    case UIState::ERROR_DISPLAY:
-      // Flash error message
-      break;
-  }
-}
-
-// ============================================
 // HELPER FUNCTIONS
 // ============================================
-void transitionToState(LockerState newState) {
-  Serial.print("State transition: ");
-  Serial.print(static_cast<int>(currentLockerState));
-  Serial.print(" -> ");
-  Serial.println(static_cast<int>(newState));
-  
-  currentLockerState = newState;
-  stateEntryTime = millis();
-}
-
 void requestAuthorization(const String &studentID) {
-  Serial.println("Requesting authorization for ID: " + studentID);
+  Serial.print("Requesting authorization for: ");
+  Serial.println(studentID);
+  
   lcd.printLines("Authorizing...", "Please wait");
   authorizationPending = true;
   authStartTime = millis();
-  currentCommState = CommState::CONNECTING;
-}
-
-void logTransaction(const String &type, const String &studentID) {
-  Serial.print("LOG: ");
-  Serial.print(type);
-  Serial.print(" - ID: ");
-  Serial.print(studentID);
-  Serial.print(" - Time: ");
-  Serial.println(millis());
   
-  // Send log via Bluetooth if connected
-  if (bluetooth.isConnected()) {
-    String logEntry = type + "," + studentID + "," + String(millis());
-    bluetooth.sendCode(logEntry);
+  // Try to connect if not connected
+  if (!bluetooth.isConnected()) {
+    lcd.printLines("Connecting...", "Please wait");
+    if (bluetooth.connect()) {
+      isNetworkAvailable = true;
+      currentCommState = CommState::SENDING_AUTH;
+    } else {
+      Serial.println("Connection failed");
+      currentCommState = CommState::ERROR;
+    }
+  } else {
+    currentCommState = CommState::SENDING_AUTH;
   }
 }
 
 void updateStatusDisplay() {
+  String line1, line2;
+  
   switch (currentLockerState) {
     case LockerState::IDLE_AVAILABLE:
-      lcd.printLines("Available", "Press # to borrow");
+      line1 = "Available";
+      line2 = isNetworkAvailable ? "Press # to borrow" : "Press # (offline)";
       break;
       
     case LockerState::IDLE_OCCUPIED:
-      if (lastBorrowerID != "") {
-        lcd.printLines("Occupied", "Return: Press #");
-      } else {
-        lcd.printLines("Occupied", "Press # to return");
-      }
+      line1 = "Occupied";
+      line2 = "Press # to return";
       break;
       
     default:
-      // Keep current display
-      break;
+      return;  // Keep current display
   }
+  
+  lcd.printLines(line1, line2);
 }
 
 void handleEmergencyConditions() {
   // Check for sensor failures
   static int sensorFailCount = 0;
   
-  // If sensors give impossible readings repeatedly
   if (doorSensor.readRaw() < 100 || boxSensor.readRaw() < 100) {
     sensorFailCount++;
     if (sensorFailCount > 10) {
       lcd.printLines("Sensor Error", "Maintenance needed");
-      transitionToState(LockerState::ERROR_STATE);
+      currentLockerState = LockerState::ERROR_STATE;
+      Serial.println("⚠️  SENSOR ERROR");
     }
   } else {
     sensorFailCount = 0;
-  }
-  
-  // Check for forced entry (door open when it should be locked)
-  if (currentLockerState == LockerState::IDLE_AVAILABLE || 
-      currentLockerState == LockerState::IDLE_OCCUPIED) {
-    if (currentSecurityState == SecurityState::DOOR_OPEN_BOX_PRESENT ||
-        currentSecurityState == SecurityState::DOOR_OPEN_BOX_ABSENT) {
-      // Unauthorized door opening
-      lcd.printLines("SECURITY ALERT", "Forced entry!");
-      redLed.on();
-      
-      // Log security event
-      logTransaction("SECURITY_BREACH", "UNKNOWN");
-      
-      // Try to recover
-      if (doorSensor.isDoorClosed()) {
-        doorServo.lock();
-        updateSecurityState();
-        if (boxSensor.isBoxPresent()) {
-          transitionToState(LockerState::IDLE_AVAILABLE);
-        } else {
-          transitionToState(LockerState::IDLE_OCCUPIED);
-        }
-      }
-    }
   }
 }

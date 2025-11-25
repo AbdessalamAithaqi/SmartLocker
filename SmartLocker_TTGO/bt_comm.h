@@ -5,19 +5,23 @@
 
 class LockerBluetooth {
 public:
-  explicit LockerBluetooth(const char* deviceName = "LockerNode");
+  explicit LockerBluetooth(const char* serverAddress);
 
   void begin();
-
-  bool isConnected();
-
+  
+  // Connection management
+  bool connect();              // Connect to server
+  void disconnect();           // Disconnect from server
+  bool isConnected();          // Check if connected
+  
+  // Communication
   bool sendCode(const String &code);
-
   String readResponse();
 
 private:
   BluetoothSerial _bt;
-  const char* _name;
-
+  String _serverAddress;       // MAC address of Pi server
   String _rxBuffer;
+  bool _connected;
+  unsigned long _lastConnectAttempt;
 };
