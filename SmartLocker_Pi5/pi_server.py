@@ -51,13 +51,13 @@ class WebhookDatabase:
                 timeout=REQUEST_TIMEOUT
             )
             if response.status_code == 200:
-                logging.info("✅ Connected to Google Sheets webhook")
+                logging.info("Connected to Google Sheets webhook")
                 self.offline = False
             else:
-                logging.warning(f"⚠️ Webhook returned {response.status_code}")
+                logging.warning(f"Webhook returned {response.status_code}")
                 self.offline = True
         except Exception as e:
-            logging.error(f"❌ Webhook connection failed: {e}")
+            logging.error(f"Webhook connection failed: {e}")
             self.offline = True
     
     def can_borrow(self, student_id):
@@ -85,7 +85,7 @@ class WebhookDatabase:
             result = response.json()
             can_borrow = result.get("can_borrow", False)
             
-            logging.info(f"🔍 Check borrow {student_id}: {can_borrow}")
+            logging.info(f"Check borrow {student_id}: {can_borrow}")
             return can_borrow
             
         except Exception as e:
@@ -109,7 +109,7 @@ class WebhookDatabase:
             )
             
             if response.status_code == 200:
-                logging.info(f"✅ {student_id} borrowed kit")
+                logging.info(f"{student_id} borrowed kit")
                 return True
             else:
                 logging.error(f"Borrow failed: {response.status_code}")
@@ -136,7 +136,7 @@ class WebhookDatabase:
                 if response.status_code != 200:
                     logging.warning(f"Return webhook failed, but allowing anyway")
             
-            logging.info(f"✅ {student_id} returned kit")
+            logging.info(f"{student_id} returned kit")
             return True
             
         except Exception as e:
@@ -169,7 +169,7 @@ class BluetoothServer:
             profiles=[bluetooth.SERIAL_PORT_PROFILE]
         )
         
-        logging.info(f"📡 Bluetooth server ready on port {BLUETOOTH_PORT}")
+        logging.info(f"Bluetooth server ready on port {BLUETOOTH_PORT}")
         logging.info("Waiting for locker connection...")
         
         # Main loop
@@ -177,7 +177,7 @@ class BluetoothServer:
             try:
                 # Accept connection
                 self.client, address = self.socket.accept()
-                logging.info(f"📱 Connected to {address}")
+                logging.info(f"Connected to {address}")
                 
                 # Handle messages
                 while True:
@@ -220,12 +220,12 @@ class BluetoothServer:
                 return "DENIED"
         
         elif parts[0] == "BORROW":
-            # Borrow log entry - just acknowledge
+            # Borrow log entry just acknowledge
             return "OK"
         
         elif parts[0] == "SECURITY_BREACH":
             # Security alert - log it
-            logging.warning(f"⚠️ SECURITY BREACH detected")
+            logging.warning(f"SECURITY BREACH detected")
             return "OK"
         
         else:
@@ -253,7 +253,7 @@ if __name__ == "__main__":
     
     # Check webhook URL
     if "YOUR_DEPLOYMENT_ID" in WEBHOOK_URL:
-        logging.error("❌ ERROR: You must set your WEBHOOK_URL!")
+        logging.error("ERROR: You must set your WEBHOOK_URL!")
         logging.error("   1. Deploy your Apps Script as a web app")
         logging.error("   2. Copy the deployment URL")
         logging.error("   3. Replace WEBHOOK_URL in this script")
@@ -267,4 +267,4 @@ if __name__ == "__main__":
     try:
         server.start()
     except KeyboardInterrupt:
-        logging.info("\n👋 Server stopped")
+        logging.info("\nServer stopped")
