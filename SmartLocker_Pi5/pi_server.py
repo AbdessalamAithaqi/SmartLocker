@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Smart Locker Server for Raspberry Pi
+Smart Locker Server for Raspberry Pi (Bookworm Compatible)
 Forwards Bluetooth requests to Google Sheets via Apps Script webhook
+Works without sdptool - uses modern Bluetooth stack
 """
 
 import time
@@ -9,39 +10,29 @@ import logging
 import bluetooth
 import requests
 import json
-import subprocess
 
-# ============================================
 # CONFIG
-# ============================================
 BLUETOOTH_PORT = 1
 LOG_FILE = "locker.log"
 
-# !!! IMPORTANT: Replace this with your Apps Script Web App URL !!!
-# Deploy your Apps Script as a web app and paste the URL here
+# webhook URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwU7jvZcrGItGfxu3uS4Ux9vrXrL5ne9Lh0TXLLuW8OUCVsh6H6-UAUgRck5Nj89nfssw/exec"
 
-# Timeout for webhook requests
-REQUEST_TIMEOUT = 5  # seconds
+REQUEST_TIMEOUT = 5
 
-# ============================================
 # LOGGING
-# ============================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(message)s",
     handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
 )
 
-# ============================================
-# DATABASE (WEB-BASED)
-# ============================================
+# DATABASE
 class WebhookDatabase:
     def __init__(self, webhook_url):
         self.webhook_url = webhook_url
         self.offline = False
 
-        # Soft test on startup – never block server from starting
         try:
             resp = requests.post(
                 webhook_url,
@@ -49,17 +40,11 @@ class WebhookDatabase:
                 timeout=REQUEST_TIMEOUT,
                 allow_redirects=True,
             )
-            logging.info(
-                "Webhook test status: %s, body preview: %r",
-                resp.status_code,
-                resp.text[:120],
-            )
+            logging.info("Webhook test: %s", resp.status_code)
         except Exception as e:
             logging.warning(f"Webhook test failed (starting anyway): {e}")
-            # We *try* online mode; methods will flip offline if failures persist.
 
     def can_borrow(self, student_id):
-        """Check if student can borrow (doesn't have a kit)"""
         if self.offline:
             logging.warning("Offline mode - denying borrow")
             return False
@@ -72,15 +57,10 @@ class WebhookDatabase:
                 allow_redirects=True,
             )
 
-            # Even if status code is weird (302/405), try to parse JSON.
             try:
                 result = resp.json()
             except ValueError:
-                logging.error(
-                    "Non-JSON response from webhook when checking borrow for %s: %r",
-                    student_id,
-                    resp.text[:200],
-                )
+                logging.error("Non-JSON response from webhook for %s", student_id)
                 return False
 
             can_borrow = bool(result.get("can_borrow", False))
@@ -93,9 +73,8 @@ class WebhookDatabase:
             return False
 
     def borrow_kit(self, student_id):
-        """Mark student as having borrowed a kit"""
         if self.offline:
-            logging.warning("Offline mode - not logging borrow to webhook")
+            logging.warning("Offline mode - not logging borrow")
             return False
 
         try:
@@ -105,13 +84,7 @@ class WebhookDatabase:
                 timeout=REQUEST_TIMEOUT,
                 allow_redirects=True,
             )
-            logging.info(
-                "Borrow POST for %s finished with status %s (body preview %r)",
-                student_id,
-                resp.status_code,
-                resp.text[:120],
-            )
-            # Side-effect on Apps Script already happened even if status!=200.
+            logging.info("Borrow %s: status %s", student_id, resp.status_code)
             return True
 
         except Exception as e:
@@ -120,8 +93,6 @@ class WebhookDatabase:
             return False
 
     def return_kit(self, student_id):
-        """Mark student as having returned a kit"""
-        # Returns always allowed (even offline for fairness)
         try:
             if not self.offline:
                 resp = requests.post(
@@ -130,26 +101,18 @@ class WebhookDatabase:
                     timeout=REQUEST_TIMEOUT,
                     allow_redirects=True,
                 )
-                logging.info(
-                    "Return POST for %s finished with status %s (body preview %r)",
-                    student_id,
-                    resp.status_code,
-                    resp.text[:120],
-                )
+                logging.info("Return %s: status %s", student_id, resp.status_code)
 
             logging.info("%s returned kit", student_id)
             return True
 
         except Exception as e:
             logging.warning(f"Return logging failed, but allowing: {e}")
-            # Still allow return even if webhook fails
             self.offline = True
             return True
 
 
-# ============================================
 # BLUETOOTH SERVER
-# ============================================
 class BluetoothServer:
     def __init__(self, database):
         self.db = database
@@ -157,29 +120,36 @@ class BluetoothServer:
         self.client = None
 
     def start(self):
-        """Start Bluetooth server"""
+        """Start Bluetooth server using modern Python BlueZ bindings"""
+        
         # Create RFCOMM socket
         self.socket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+        
+        # Bind to any available port
         self.socket.bind(("", BLUETOOTH_PORT))
         self.socket.listen(1)
-
-        # Register SPP service via sdptool instead of advertise_service()
+        
+        # Get the port that was bound
+        port = self.socket.getsockname()[1]
+        
+        # Define service UUID (Serial Port Profile)
+        uuid = "00001101-0000-1000-8000-00805F9B34FB"
+        
+        # Advertise service using Python bluetooth library
         try:
-            subprocess.run(
-                ["sdptool", "add", "--channel", str(BLUETOOTH_PORT), "SP"],
-                check=True,
+            bluetooth.advertise_service(
+                self.socket,
+                "SmartLocker",
+                service_id=uuid,
+                service_classes=[uuid, bluetooth.SERIAL_PORT_CLASS],
+                profiles=[bluetooth.SERIAL_PORT_PROFILE],
             )
-            logging.info(
-                "Registered RFCOMM service with sdptool on channel %d",
-                BLUETOOTH_PORT,
-            )
+            logging.info("✅ Service advertised successfully (no sdptool needed)")
         except Exception as e:
-            logging.warning(
-                "Failed to register service with sdptool (device may still connect if it knows MAC+channel): %s",
-                e,
-            )
-
-        logging.info("Bluetooth server ready on port %d", BLUETOOTH_PORT)
+            logging.warning(f"Service advertisement failed: {e}")
+            logging.info("Server will still work if client knows MAC address")
+        
+        logging.info(f"📡 Bluetooth server ready on port {port}")
         logging.info("Waiting for locker connection...")
 
         # Main loop
@@ -187,7 +157,7 @@ class BluetoothServer:
             try:
                 # Accept connection
                 self.client, address = self.socket.accept()
-                logging.info("Connected to %s", address)
+                logging.info(f"📱 Connected to {address}")
 
                 # Handle messages
                 while True:
@@ -196,32 +166,26 @@ class BluetoothServer:
                         break
 
                     message = data.decode("utf-8").strip()
-                    if message:  # Ignore empty messages
+                    if message:
                         response = self.process(message)
                         self.client.send((response + "\n").encode("utf-8"))
                         logging.info("[%s] → %s", message, response)
 
+            except bluetooth.BluetoothError as e:
+                logging.error(f"Bluetooth error: {e}")
             except Exception as e:
                 logging.error(f"Connection error: {e}")
             finally:
                 if self.client:
                     self.client.close()
                     self.client = None
-                logging.info("Disconnected")
+                logging.info("Disconnected - waiting for next connection...")
 
     def process(self, message):
         """Process message from locker"""
-        # Message types:
-        # "123456" = Student ID requesting borrow
-        # "RETURN,123456" = Student returning kit
-        # "BORROW,123456,timestamp" = Log entry (we can ignore)
-        # "RETURN,123456,timestamp" = Log entry (we process as return)
-        # "SECURITY_BREACH,UNKNOWN" = Security alert (log only)
-
         parts = message.split(",")
 
         if parts[0] == "RETURN":
-            # Return request
             if len(parts) >= 2:
                 student_id = parts[1]
                 self.db.return_kit(student_id)
@@ -230,19 +194,16 @@ class BluetoothServer:
                 return "DENIED"
 
         elif parts[0] == "BORROW":
-            # Borrow log entry – just acknowledge
             return "OK"
 
         elif parts[0] == "SECURITY_BREACH":
-            # Security alert - log it
             logging.warning("SECURITY BREACH detected")
             return "OK"
 
         else:
-            # Assume it's a student ID for borrow request
+            # Student ID for borrow request
             student_id = parts[0]
 
-            # Validate it's numeric and reasonable length
             if student_id.isdigit() and 4 <= len(student_id) <= 12:
                 if self.db.can_borrow(student_id):
                     self.db.borrow_kit(student_id)
@@ -254,12 +215,10 @@ class BluetoothServer:
                 return "DENIED"
 
 
-# ============================================
 # MAIN
-# ============================================
 if __name__ == "__main__":
     logging.info("=" * 50)
-    logging.info("SMART LOCKER SERVER (GOOGLE SHEETS)")
+    logging.info("SMART LOCKER SERVER (BOOKWORM EDITION)")
     logging.info("=" * 50)
 
     # Initialize
@@ -270,4 +229,4 @@ if __name__ == "__main__":
     try:
         server.start()
     except KeyboardInterrupt:
-        logging.info("\nServer stopped")
+        logging.info("\n👋 Server stopped")
