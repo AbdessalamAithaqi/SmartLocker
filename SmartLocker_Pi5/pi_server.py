@@ -9,7 +9,7 @@ import logging
 import bluetooth
 import requests
 import json
-import subprocess  # for sdptool
+import subprocess
 
 # ============================================
 # CONFIG
@@ -271,4 +271,3 @@ if __name__ == "__main__":
         server.start()
     except KeyboardInterrupt:
         logging.info("\nServer stopped")
-
