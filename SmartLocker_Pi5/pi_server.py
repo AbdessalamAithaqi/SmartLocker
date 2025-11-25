@@ -18,7 +18,7 @@ LOG_FILE = "locker.log"
 
 # !!! IMPORTANT: Replace this with your Apps Script Web App URL !!!
 # Deploy your Apps Script as a web app and paste the URL here
-WEBHOOK_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwU7jvZcrGItGfxu3uS4Ux9vrXrL5ne9Lh0TXLLuW8OUCVsh6H6-UAUgRck5Nj89nfssw/exec"
 
 # Timeout for webhook requests
 REQUEST_TIMEOUT = 5  # seconds
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     logging.info("="*50)
     
     # Check webhook URL
-    if "AKfycbzqHnNa_fO4LAayWhiWH0lL8KIDsCxuOL25IaVZCJ4ihY6Lo_CVwCIv0tb8SR197mJhmw" in WEBHOOK_URL:
+    if "AKfycbxi8QdK9np4i7wBSJ-Nbvy3LxQT7T5JaHGC4j5TgVrL9nk40IpJ6CwoVermAfmWivXc9Q" in WEBHOOK_URL:
         logging.error("ERROR: You must set your WEBHOOK_URL!")
         logging.error("   1. Deploy your Apps Script as a web app")
         logging.error("   2. Copy the deployment URL")
