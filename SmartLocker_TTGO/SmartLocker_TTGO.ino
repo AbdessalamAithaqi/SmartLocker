@@ -2,7 +2,6 @@
 #include "lcd_display.h"
 #include "keypad.h"
 #include "led.h"
-#include "buzzer.h"
 #include "servo.h"
 #include "ir.h"
 #include "bt_comm.h"
@@ -61,7 +60,6 @@ LCDDisplay lcd;
 LockerKeypad keypad;
 GreenLED greenLed;
 RedLED redLed;
-Buzzer buzzer;
 DoorServo doorServo;
 BoxIR boxSensor;
 DoorIR doorSensor;
@@ -110,7 +108,6 @@ void setup() {
   keypad.begin();
   greenLed.begin();
   redLed.begin();
-  buzzer.begin();
   doorServo.begin();
   boxSensor.begin();
   doorSensor.begin();
@@ -266,9 +263,6 @@ void handleIdleAvailable() {
     inputBuffer = "";
     inputStartTime = millis();
     lcd.printLines("Enter ID:", "");
-    buzzer.on();
-    delay(BUZZER_BEEP_MS);
-    buzzer.off();
   }
 }
 
@@ -290,19 +284,12 @@ void handleAwaitingID() {
   // Check for timeout
   if (millis() - inputStartTime > INPUT_TIMEOUT_MS) {
     lcd.printLines("Timeout", "Try again");
-    buzzer.on();
-    delay(BUZZER_LONG_MS);
-    buzzer.off();
     transitionToState(LockerState::IDLE_AVAILABLE);
     return;
   }
   
   char key = keypad.getKey();
   if (key) {
-    buzzer.on();
-    delay(BUZZER_BEEP_MS);
-    buzzer.off();
-    
     if (key >= '0' && key <= '9') {
       inputBuffer += key;
       lcd.printLines("Enter ID:", inputBuffer);
@@ -333,9 +320,6 @@ void handleAuthenticating() {
       transitionToState(LockerState::BORROW_AUTHORIZED);
     } else {
       lcd.printLines("Access Denied", "Try again");
-      buzzer.on();
-      delay(BUZZER_LONG_MS);
-      buzzer.off();
       delay(2000);
       transitionToState(LockerState::IDLE_AVAILABLE);
     }
@@ -373,9 +357,6 @@ void handleBorrowInProgress() {
   if (millis() - stateEntryTime > DOOR_OPEN_TIMEOUT_MS) {
     doorServo.lock();
     lcd.printLines("Timeout", "Transaction cancelled");
-    buzzer.on();
-    delay(BUZZER_LONG_MS);
-    buzzer.off();
     delay(2000);
     transitionToState(LockerState::IDLE_AVAILABLE);
   }
@@ -391,14 +372,6 @@ void handleBorrowCompleting() {
     
     // Log the transaction
     logTransaction("BORROW", currentStudentID);
-    
-    // Success beep pattern
-    for (int i = 0; i < 2; i++) {
-      buzzer.on();
-      delay(BUZZER_BEEP_MS);
-      buzzer.off();
-      delay(BUZZER_BEEP_MS);
-    }
     
     delay(3000);
     transitionToState(LockerState::IDLE_OCCUPIED);
@@ -426,9 +399,6 @@ void handleReturnInProgress() {
   if (millis() - stateEntryTime > DOOR_OPEN_TIMEOUT_MS) {
     doorServo.lock();
     lcd.printLines("Timeout", "Try again");
-    buzzer.on();
-    delay(BUZZER_LONG_MS);
-    buzzer.off();
     delay(2000);
     transitionToState(LockerState::IDLE_OCCUPIED);
   }
@@ -444,14 +414,6 @@ void handleReturnCompleting() {
     // Log the transaction
     logTransaction("RETURN", lastBorrowerID);
     
-    // Success beep pattern
-    for (int i = 0; i < 3; i++) {
-      buzzer.on();
-      delay(BUZZER_BEEP_MS);
-      buzzer.off();
-      delay(BUZZER_BEEP_MS);
-    }
-    
     lastBorrowerID = "";
     delay(3000);
     transitionToState(LockerState::IDLE_AVAILABLE);
@@ -461,9 +423,6 @@ void handleReturnCompleting() {
   if (currentSecurityState == SecurityState::DOOR_CLOSED_BOX_ABSENT) {
     doorServo.lock();
     lcd.printLines("Return Failed", "Box not detected");
-    buzzer.on();
-    delay(BUZZER_LONG_MS);
-    buzzer.off();
     delay(2000);
     transitionToState(LockerState::IDLE_OCCUPIED);
   }
@@ -682,15 +641,10 @@ void handleEmergencyConditions() {
         currentSecurityState == SecurityState::DOOR_OPEN_BOX_ABSENT) {
       // Unauthorized door opening
       lcd.printLines("SECURITY ALERT", "Forced entry!");
-      buzzer.on();
       redLed.on();
       
       // Log security event
       logTransaction("SECURITY_BREACH", "UNKNOWN");
-      
-      // Keep alarm on for 5 seconds
-      delay(5000);
-      buzzer.off();
       
       // Try to recover
       if (doorSensor.isDoorClosed()) {

@@ -5,11 +5,8 @@ constexpr int PIN_I2C_SDA       = 21;
 constexpr int PIN_I2C_SCL       = 22;
 
 // LEDs
-constexpr int PIN_LED_GREEN     = 1;
-constexpr int PIN_LED_RED       = 3;
-
-// Buzzer
-constexpr int PIN_BUZZER        = 23;
+constexpr int PIN_LED_GREEN     = 23;
+constexpr int PIN_LED_RED       = 19;
 
 // Keypad 4x4
 constexpr int PIN_KEYPAD_R0     = 14;
@@ -23,11 +20,11 @@ constexpr int PIN_KEYPAD_C2     = 25;
 constexpr int PIN_KEYPAD_C3     = 4;
 
 // IR sensors
-constexpr int PIN_IR_SENSOR_BOX   = 35;
+constexpr int PIN_IR_SENSOR_BOX   = 34;
 constexpr int IR_BOX_THRESHOLD      = 2800;
 
-constexpr int PIN_IR_SENSOR_DOOR  = 34;
-constexpr int IR_DOOR_THRESHOLD      = 2500;
+constexpr int PIN_IR_SENSOR_DOOR  = 35;
+constexpr int IR_DOOR_THRESHOLD      = 1300;
 
 // Servo
 constexpr int PIN_SERVO_LOCK      = 26;
