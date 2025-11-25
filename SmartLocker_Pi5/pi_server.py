@@ -252,7 +252,7 @@ if __name__ == "__main__":
     logging.info("="*50)
     
     # Check webhook URL
-    if "YOUR_DEPLOYMENT_ID" in WEBHOOK_URL:
+    if "AKfycbzqHnNa_fO4LAayWhiWH0lL8KIDsCxuOL25IaVZCJ4ihY6Lo_CVwCIv0tb8SR197mJhmw" in WEBHOOK_URL:
         logging.error("ERROR: You must set your WEBHOOK_URL!")
         logging.error("   1. Deploy your Apps Script as a web app")
         logging.error("   2. Copy the deployment URL")
