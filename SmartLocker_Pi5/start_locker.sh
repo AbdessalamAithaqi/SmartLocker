@@ -7,17 +7,14 @@
 # 3. Starts the Python server to handle webhook communication
 #
 # Usage:
-#   ./start_locker.sh <TTGO_MAC> <WEBHOOK_URL>
-#
-# Example:
-#   ./start_locker.sh "14:2B:2F:A7:94:22" "https://script.google.com/macros/s/.../exec"
+#   ./start_locker.sh
 #
 # To run at boot, add to /etc/rc.local or create a systemd service.
 
-# --- Configuration ---
-TTGO_MAC="${1:-14:2B:2F:A7:94:22}"  # TTGO MAC address (get from TTGO serial output)
-WEBHOOK_URL="${2:-}"                 # Google Apps Script webhook URL
-SPP_CHANNEL=1                        # SPP channel
+# --- Configuration (HARDCODED) ---
+TTGO_MAC="14:2B:2F:A7:94:22"
+WEBHOOK_URL="https://script.google.com/macros/s/AKfycbwU7jvZcrGItGfxu3uS4Ux9vrXrL5ne9Lh0TXLLuW8OUCVsh6H6-UAUgRck5Nj89nfssw/exec"
+SPP_CHANNEL=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="/var/log/smartlocker.log"
 
@@ -47,27 +44,13 @@ if [ "$EUID" -ne 0 ]; then
     exec sudo "$0" "$@"
 fi
 
-# --- Check arguments ---
-if [ -z "$WEBHOOK_URL" ]; then
-    echo "Usage: $0 <TTGO_MAC> <WEBHOOK_URL>"
-    echo ""
-    echo "Arguments:"
-    echo "  TTGO_MAC     - Bluetooth MAC address of your TTGO"
-    echo "                 (shown in TTGO serial output on boot)"
-    echo "  WEBHOOK_URL  - Google Apps Script webhook URL"
-    echo ""
-    echo "Example:"
-    echo "  $0 '14:2B:2F:A7:94:22' 'https://script.google.com/macros/s/ABC123/exec'"
-    exit 1
-fi
-
 # --- Setup signal handlers ---
 trap cleanup SIGINT SIGTERM
 
 log "=========================================="
 log "[INFO] SmartLocker Pi Server Starting"
 log "[INFO] TTGO MAC: $TTGO_MAC"
-log "[INFO] Webhook: ${WEBHOOK_URL:0:50}..."
+log "[INFO] Webhook: Configured"
 log "=========================================="
 
 # --- Setup Bluetooth ---

@@ -42,6 +42,7 @@ LOCAL_LOG_FILE = Path.home() / "smartlocker_log.json"
 WEBHOOK_TIMEOUT = 10  # seconds
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
+DEFAULT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwU7jvZcrGItGfxu3uS4Ux9vrXrL5ne9Lh0TXLLuW8OUCVsh6H6-UAUgRck5Nj89nfssw/exec"
 
 # Setup logging
 logging.basicConfig(
@@ -393,19 +394,12 @@ class LockerServer:
 
 
 def main():
-    # Check arguments
-    if len(sys.argv) < 2:
-        print("Usage: python3 locker_server.py <webhook_url>")
-        print()
-        print("Example:")
-        print("  python3 locker_server.py 'https://script.google.com/macros/s/YOUR_ID/exec'")
-        sys.exit(1)
-    
-    webhook_url = sys.argv[1]
-    
-    if "YOUR_" in webhook_url:
-        print("ERROR: Please replace YOUR_ID with your actual Google Apps Script deployment ID")
-        sys.exit(1)
+    # Use argument if provided, otherwise use hardcoded default
+    if len(sys.argv) > 1:
+        webhook_url = sys.argv[1]
+    else:
+        webhook_url = DEFAULT_WEBHOOK_URL
+        print(f"Using default webhook URL")
     
     # Create and run server
     server = LockerServer(webhook_url)

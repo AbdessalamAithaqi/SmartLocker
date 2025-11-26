@@ -5,11 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# UPDATE THESE VALUES:
-Environment="TTGO_MAC=14:2B:2F:A7:94:22"
-Environment="WEBHOOK_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec"
-
-ExecStart=/opt/smartlocker/start_locker.sh ${TTGO_MAC} ${WEBHOOK_URL}
+ExecStart=/opt/smartlocker/start_locker.sh
 Restart=always
 RestartSec=10
 
