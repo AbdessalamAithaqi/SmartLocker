@@ -1,107 +1,115 @@
 #include "bt_comm.h"
+#include "esp_spp_api.h"   // for SPP callback types
 
-LockerBluetooth::LockerBluetooth(const char* serverAddress)
-  : _serverAddress(serverAddress),
-    _connected(false),
-    _lastConnectAttempt(0)
+// Static instance pointer for callback
+LockerBluetooth* LockerBluetooth::_instance = nullptr;
+
+// Static callback function for SPP events (same pattern as working code)
+void LockerBluetooth::btCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
+  if (_instance == nullptr) return;
+  
+  switch (event) {
+    case ESP_SPP_SRV_OPEN_EVT:   // Client (Pi) connected
+      _instance->_clientConnected = true;
+      Serial.println("[BT] Pi connected!");
+      break;
+
+    case ESP_SPP_CLOSE_EVT:      // Client disconnected
+      _instance->_clientConnected = false;
+      Serial.println("[BT] Pi disconnected");
+      break;
+
+    default:
+      break;
+  }
+}
+
+LockerBluetooth::LockerBluetooth(const char* deviceName)
+  : _deviceName(deviceName),
+    _clientConnected(false)
 {
+  _instance = this;
 }
 
 void LockerBluetooth::begin() {
-  _bt.begin("SmartLocker_Client", false);  // Start as CLIENT (not master)
-  _rxBuffer.reserve(32);
-  Serial.println("Bluetooth client initialized");
-}
-
-bool LockerBluetooth::connect() {
-  // Prevent connection spam - only try every 5 seconds
-  if (millis() - _lastConnectAttempt < 5000) {
-    return _connected;
+  // Register callback before starting (same as working code)
+  _bt.register_callback(btCallback);
+  
+  // Start as Bluetooth SPP SERVER
+  // The Pi will connect to us using rfcomm
+  if (!_bt.begin(_deviceName)) {
+    Serial.println("[BT] ERROR: Failed to start Bluetooth!");
+    while (true) {
+      delay(1000);  // Fatal error, hang
+    }
   }
   
-  _lastConnectAttempt = millis();
-  
-  if (_connected) {
-    return true;  // Already connected
-  }
-  
-  Serial.print("Attempting to connect to Pi: ");
-  Serial.println(_serverAddress);
-  
-  // Connect to the Pi server
-  _connected = _bt.connect(_serverAddress);
-  
-  if (_connected) {
-    Serial.println("✓ Connected to Pi server");
-    _rxBuffer = "";  // Clear buffer
-  } else {
-    Serial.println("✗ Connection failed");
-  }
-  
-  return _connected;
-}
-
-void LockerBluetooth::disconnect() {
-  if (_connected) {
-    _bt.disconnect();
-    _connected = false;
-    Serial.println("Disconnected from Pi");
-  }
+  Serial.print("[BT] Server started as '");
+  Serial.print(_deviceName);
+  Serial.println("'");
+  Serial.println("[BT] Waiting for Pi to connect...");
+  Serial.println("[BT] (Use 'bluetoothctl' on Pi to find MAC address)");
 }
 
 bool LockerBluetooth::isConnected() {
-  // Check actual connection status
-  if (!_bt.connected()) {
-    _connected = false;
-  }
-  return _connected;
+  return _clientConnected && _bt.connected();
 }
 
-bool LockerBluetooth::sendCode(const String &code) {
-  if (!_connected || !_bt.connected()) {
-    Serial.println("Not connected - cannot send");
-    _connected = false;
+bool LockerBluetooth::sendMessage(const String &msg) {
+  if (!isConnected()) {
+    Serial.println("[BT] Cannot send - Pi not connected");
     return false;
   }
   
-  // Send the code with newline
-  _bt.print(code);
+  _bt.print(msg);
   _bt.print('\n');
+  _bt.flush();
   
-  Serial.print("Sent to Pi: ");
-  Serial.println(code);
+  Serial.print("[BT] Sent: ");
+  Serial.println(msg);
   
   return true;
 }
 
+bool LockerBluetooth::sendBorrowRequest(const String &studentId) {
+  String msg = "BORROW," + studentId;
+  return sendMessage(msg);
+}
+
+bool LockerBluetooth::sendReturnNotification(const String &studentId) {
+  String msg = "RETURN," + studentId;
+  return sendMessage(msg);
+}
+
 String LockerBluetooth::readResponse() {
-  if (!_connected || !_bt.connected()) {
-    _connected = false;
+  if (!isConnected()) {
     return "";
   }
   
-  // Read all available chars without blocking
-  while (_bt.available()) {
-    char c = (char)_bt.read();
-
-    if (c == '\n') {
-      // Completed message
-      String msg = _rxBuffer;
-      _rxBuffer = "";
-      msg.trim();
-      msg.toUpperCase();
+  // Check if data is available (same pattern as working code)
+  if (_bt.available()) {
+    String msg = _bt.readStringUntil('\n');
+    msg.trim();
+    
+    if (msg.length() > 0) {
+      Serial.print("[BT] Received from Pi: '");
+      Serial.print(msg);
+      Serial.println("'");
       
-      Serial.print("Received from Pi: ");
-      Serial.println(msg);
+      msg.toUpperCase();
 
-      if (msg == "OK")     return "OK";
-      if (msg == "DENIED") return "DENIED";
-      return msg; // Unexpected message
-    }
-    else {
-      _rxBuffer += c;
+      // Normalize responses
+      if (msg == "OK" || msg == "GRANTED" || msg == "SUCCESS") {
+        return "OK";
+      }
+      if (msg == "DENIED" || msg == "NO" || msg == "FAIL" || msg == "ERROR") {
+        return "DENIED";
+      }
+      
+      // Return as-is for other messages
+      return msg;
     }
   }
 
-  return "";  // No complete message yet
+  return "";  // No message available
 }
