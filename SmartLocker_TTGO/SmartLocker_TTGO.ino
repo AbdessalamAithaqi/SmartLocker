@@ -1,88 +1,133 @@
 /*
- * TTGO ESP32 AS BLUETOOTH SERVER
+ * MINIMAL BLUETOOTH TEST FOR TTGO ESP32
  * 
- * The TTGO is now the SERVER - it waits for the Pi to connect to it.
- * This is simpler and often more reliable!
+ * This sketch does ONE thing: connect to your Raspberry Pi and send/receive messages
+ * No sensors, no servos, no complexity - just pure Bluetooth testing
  * 
- * SETUP:
- * 1. Upload this to your TTGO
- * 2. Open Serial Monitor (115200 baud)
- * 3. Note the TTGO's MAC address shown
- * 4. Run the modified Pi client script with the TTGO's MAC
+ * BEFORE UPLOADING:
+ * 1. Get your Pi's MAC address (run: hciconfig on Pi)
+ * 2. Replace PI_MAC_ADDRESS below with your actual MAC
+ * 
+ * EXPECTED BEHAVIOR:
+ * - TTGO connects to Pi
+ * - Sends "HELLO" every 5 seconds
+ * - Prints Pi's responses to Serial Monitor
  */
 
 #include <BluetoothSerial.h>
 
+// ========================================
+// CONFIGURATION - CHANGE THIS!
+// ========================================
+const char* PI_MAC_ADDRESS = "D8:3A:DD:D2:34:EC";
+// REPLACE WITH YOUR PI'S MAC!
+// ========================================
+// GLOBALS
+// ========================================
 BluetoothSerial SerialBT;
-String rxBuffer = "";
+bool connected = false;
+unsigned long lastAttempt = 0;
+unsigned long lastMessage = 0;
 
+// ========================================
+// SETUP
+// ========================================
 void setup() {
   Serial.begin(115200);
   delay(1000);
   
   Serial.println("\n\n========================================");
-  Serial.println("TTGO ESP32 - BLUETOOTH SERVER");
+  Serial.println("TTGO ESP32 - MINIMAL BLUETOOTH TEST");
   Serial.println("========================================");
   Serial.println();
-  
-  // Start Bluetooth as SERVER
-  SerialBT.begin("SmartLocker_Server", true);  // true = master/server mode
-  
-  Serial.println("✓ Bluetooth server started");
+  Serial.print("Target Pi MAC: ");
+  Serial.println(PI_MAC_ADDRESS);
   Serial.println();
-  Serial.println("IMPORTANT: Your TTGO's MAC address:");
   
-  // Print MAC address
-  uint8_t mac[6];
-  esp_read_mac(mac, ESP_MAC_BT);
-  Serial.printf("   %02X:%02X:%02X:%02X:%02X:%02X\n", 
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  
-  Serial.println();
-  Serial.println("Copy this MAC address and use it in pi_client.py");
-  Serial.println();
-  Serial.println("========================================");
-  Serial.println("Waiting for Pi to connect...");
-  Serial.println("========================================");
+  // Initialize Bluetooth as CLIENT (not master)
+  SerialBT.begin("TTGO_Test", false);
+  Serial.println("✓ Bluetooth initialized");
+  Serial.println("Attempting to connect to Pi...");
   Serial.println();
 }
 
+// ========================================
+// MAIN LOOP
+// ========================================
 void loop() {
-  // Check if connected
-  if (SerialBT.hasClient()) {
-    // Read incoming data
-    while (SerialBT.available()) {
-      char c = SerialBT.read();
+  // STEP 1: Try to connect if not connected (every 5 seconds)
+  if (!connected) {
+    if (millis() - lastAttempt > 5000) {
+      lastAttempt = millis();
       
-      if (c == '\n') {
-        // Complete message received
-        rxBuffer.trim();
-        
-        if (rxBuffer.length() > 0) {
-          Serial.print("← Received: ");
-          Serial.println(rxBuffer);
-          
-          // Echo back with "OK:"
-          String response = "OK: " + rxBuffer;
-          SerialBT.println(response);
-          
-          Serial.print("→ Sent: ");
-          Serial.println(response);
-        }
-        
-        rxBuffer = "";
+      Serial.println("--------------------------------------");
+      Serial.print("Connecting to ");
+      Serial.print(PI_MAC_ADDRESS);
+      Serial.println("...");
+      
+      connected = SerialBT.connect(PI_MAC_ADDRESS);
+      
+      if (connected) {
+        Serial.println("✓✓✓ SUCCESS! Connected to Pi! ✓✓✓");
+        Serial.println("--------------------------------------");
+        Serial.println();
       } else {
-        rxBuffer += c;
+        Serial.println("✗ Connection failed");
+        Serial.println("Troubleshooting:");
+        Serial.println("  1. Is Pi running pi_server.py?");
+        Serial.println("  2. Is Pi Bluetooth on? (bluetoothctl power on)");
+        Serial.println("  3. Is MAC address correct?");
+        Serial.println("  4. Are devices within range?");
+        Serial.println();
+        Serial.println("Will retry in 5 seconds...");
+        Serial.println();
       }
     }
-  } else {
-    // No client connected - show waiting message every 5 seconds
-    static unsigned long lastMsg = 0;
-    if (millis() - lastMsg > 5000) {
-      Serial.println("Still waiting for Pi connection...");
-      lastMsg = millis();
-    }
+    return;
   }
   
-  delay(10);
+  // STEP 2: Check connection is still alive
+  if (!SerialBT.connected()) {
+    Serial.println("✗ Connection lost! Will retry...");
+    connected = false;
+    return;
+  }
+  
+  // STEP 3: Send test message every 5 seconds
+  if (millis() - lastMessage > 5000) {
+    lastMessage = millis();
+    
+    Serial.print("→ Sending: HELLO");
+    SerialBT.println("HELLO");
+    Serial.println(" ...sent!");
+  }
+  
+  // STEP 4: Read any responses from Pi
+  while (SerialBT.available()) {
+    char c = SerialBT.read();
+    Serial.print(c);
+  }
+  
+  delay(100);
 }
+
+// ========================================
+// HELPER: Get your Pi's MAC via Serial
+// ========================================
+/*
+ * On your Raspberry Pi, run one of these commands:
+ * 
+ * Method 1 (simple):
+ *   hciconfig
+ * 
+ * Method 2 (detailed):
+ *   bluetoothctl
+ *   > show
+ *   > exit
+ * 
+ * Method 3 (from script):
+ *   sudo hcitool dev
+ * 
+ * Look for MAC address like: D8:3A:DD:D2:34:EC
+ * Copy it exactly as shown (with colons)
+ */
