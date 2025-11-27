@@ -1,24 +1,3 @@
-#!/usr/bin/env python3
-"""
-SmartLocker Pi Server
-=====================
-Bridges the TTGO Bluetooth connection to the Google Sheets webhook.
-
-This script:
-1. Reads from /dev/rfcomm0 (TTGO Bluetooth connection)
-2. Parses commands (BORROW,{id} or RETURN,{id})
-3. Makes HTTP requests to Google Apps Script webhook
-4. Sends responses back to TTGO (OK or DENIED)
-
-Also maintains a local log file for offline operation.
-
-Usage:
-    python3 locker_server.py <webhook_url>
-
-Example:
-    python3 locker_server.py "https://script.google.com/macros/s/YOUR_ID/exec"
-"""
-
 import os
 import sys
 import time
