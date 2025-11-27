@@ -8,9 +8,8 @@
 constexpr int PIN_I2C_SDA       = 21;
 constexpr int PIN_I2C_SCL       = 22;
 
-// LEDs
+// LED
 constexpr int PIN_LED_GREEN     = 23;
-constexpr int PIN_LED_RED       = 19;
 
 // Keypad 4x4
 constexpr int PIN_KEYPAD_R0     = 14;

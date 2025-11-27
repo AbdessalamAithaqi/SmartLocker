@@ -27,7 +27,7 @@ A smart locker system using ESP32 TTGO and Raspberry Pi 5 with Google Sheets int
 - ESP32 TTGO T-Display
 - 16x2 LCD with I2C (0x27)
 - 4x4 Matrix Keypad
-- Green and Red LEDs
+- Green LED (status indicator)
 - Servo motor (door lock)
 - 2x IR sensors (box detection, door detection)
 
@@ -156,8 +156,7 @@ sudo journalctl -u smartlocker -f
 |----------------|-----------------|--------------------------|
 | LCD SDA        | GPIO 21         | I2C Data                 |
 | LCD SCL        | GPIO 22         | I2C Clock                |
-| Green LED      | GPIO 23         |                          |
-| Red LED        | GPIO 19         |                          |
+| Green LED      | GPIO 23         | Status indicator         |
 | Keypad Rows    | 14, 12, 13, 15  | R0-R3                    |
 | Keypad Cols    | 2, 0, 25, 4     | C0-C3                    |
 | Box IR Sensor  | GPIO 34         | Analog, threshold: 2800  |

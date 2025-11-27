@@ -23,8 +23,3 @@ GreenLED::GreenLED()
   : LED(PIN_LED_GREEN)
 {
 }
-
-RedLED::RedLED()
-  : LED(PIN_LED_RED)
-{
-}

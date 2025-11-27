@@ -19,8 +19,3 @@ class GreenLED : public LED {
 public:
   GreenLED();
 };
-
-class RedLED : public LED {
-public:
-  RedLED();
-};

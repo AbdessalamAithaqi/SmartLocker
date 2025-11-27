@@ -33,7 +33,6 @@ enum class State {
 LCDDisplay lcd;
 LockerKeypad keypad;
 GreenLED greenLed;
-RedLED redLed;
 DoorServo doorServo;
 BoxIR boxSensor;
 DoorIR doorSensor;
@@ -73,7 +72,6 @@ void setup() {
   
   keypad.begin();
   greenLed.begin();
-  redLed.begin();
   doorServo.begin();
   boxSensor.begin();
   doorSensor.begin();
@@ -179,14 +177,12 @@ void handleIdleAvailable() {
     if (piConnected) {
       lcd.printLines("Box Available", "Press # to start");
       greenLed.on();
-      redLed.off();
     } else {
       lcd.printLines("Waiting for Pi", "Connection...");
       // Blink green to indicate waiting
       static bool ledState = false;
       ledState = !ledState;
       if (ledState) greenLed.on(); else greenLed.off();
-      redLed.off();
     }
     lastDisplayUpdate = millis();
   }
@@ -210,7 +206,6 @@ void handleIdleOccupied() {
   if (millis() - lastDisplayUpdate > 3000) {
     lcd.printLines("Box Out", "# to return");
     greenLed.off();
-    redLed.on();
     lastDisplayUpdate = millis();
   }
   
@@ -279,7 +274,6 @@ void handleAuthenticating() {
   if (!authRequestSent) {
     lcd.printLines("Authorizing...", currentStudentID);
     greenLed.off();
-    redLed.off();
     
     // Check Pi connection first
     if (!bluetooth.isConnected()) {
@@ -312,7 +306,6 @@ void handleAuthenticating() {
     Serial.println("AUTHORIZED!");
     lcd.printLines("Authorized!", currentStudentID);
     greenLed.on();
-    redLed.off();
     delay(1000);
     authRequestSent = false;
     changeState(State::BORROW_AUTHORIZED);
@@ -321,7 +314,6 @@ void handleAuthenticating() {
     Serial.println("DENIED!");
     lcd.printLines("Access Denied", "Already borrowed");
     greenLed.off();
-    redLed.on();
     delay(3000);
     authRequestSent = false;
     changeState(State::IDLE_AVAILABLE);
@@ -332,17 +324,15 @@ void handleAuthenticating() {
     Serial.println(response);
   }
   
-  // Blink LEDs while waiting
+  // Blink green LED while waiting
   static unsigned long lastBlink = 0;
   if (millis() - lastBlink > 300) {
     static bool blinkState = false;
     blinkState = !blinkState;
     if (blinkState) {
       greenLed.on();
-      redLed.on();
     } else {
       greenLed.off();
-      redLed.off();
     }
     lastBlink = millis();
   }
@@ -353,7 +343,6 @@ void handleBorrowAuthorized() {
   doorServo.unlock();
   lcd.printLines("Door Unlocked", "Take box & close");
   greenLed.on();
-  redLed.off();
   
   changeState(State::BORROW_IN_PROGRESS);
 }
@@ -400,7 +389,6 @@ void handleBorrowCompleting() {
     
     lcd.printLines("Success!", "Enjoy your kit");
     greenLed.on();
-    redLed.off();
     delay(3000);
     
     currentStudentID = "";
@@ -422,7 +410,6 @@ void handleReturnInProgress() {
     doorServo.unlock();
     lcd.printLines("Door Unlocked", "Place box inside");
     greenLed.off();
-    redLed.on();
     doorUnlocked = true;
   }
   
@@ -442,12 +429,12 @@ void handleReturnInProgress() {
     lcd.printLines("Open Door", "Place box inside");
   }
   
-  // Blink red LED
+  // Blink green LED
   static unsigned long lastBlink = 0;
   if (millis() - lastBlink > 500) {
     static bool blinkState = false;
     blinkState = !blinkState;
-    if (blinkState) redLed.on(); else redLed.off();
+    if (blinkState) greenLed.on(); else greenLed.off();
     lastBlink = millis();
   }
 }
@@ -466,7 +453,6 @@ void handleReturnCompleting() {
     
     lcd.printLines("Return Complete", "Thank you!");
     greenLed.on();
-    redLed.off();
     delay(3000);
     
     lastBorrowerID = "";
@@ -482,13 +468,12 @@ void handleReturnCompleting() {
 }
 
 void handleError() {
-  // Blink red LED rapidly
+  // Blink green LED rapidly to indicate error
   static unsigned long lastBlink = 0;
   if (millis() - lastBlink > 200) {
     static bool blinkState = false;
     blinkState = !blinkState;
-    if (blinkState) redLed.on(); else redLed.off();
-    greenLed.off();
+    if (blinkState) greenLed.on(); else greenLed.off();
     lastBlink = millis();
   }
   
