@@ -1,3 +1,24 @@
+#!/usr/bin/env python3
+"""
+SmartLocker Pi Server
+=====================
+Bridges the TTGO Bluetooth connection to the Google Sheets webhook.
+
+This script:
+1. Reads from /dev/rfcomm0 (TTGO Bluetooth connection)
+2. Parses commands (BORROW,{id} or RETURN,{id})
+3. Makes HTTP requests to Google Apps Script webhook
+4. Sends responses back to TTGO (OK or DENIED)
+
+BORROW logic:
+- Student must EXIST in the database
+- Student must NOT already have a box borrowed
+- If both conditions met -> OK, else -> DENIED
+
+RETURN logic:
+- Just record the return -> OK
+"""
+
 import os
 import sys
 import time
@@ -7,7 +28,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-# Check for required library
 try:
     import requests
 except ImportError:
@@ -43,7 +63,6 @@ class LocalLog:
         self._load()
     
     def _load(self):
-        """Load existing log file"""
         if self.filepath.exists():
             try:
                 with open(self.filepath, 'r') as f:
@@ -55,7 +74,6 @@ class LocalLog:
                 self.pending_syncs = []
     
     def _save(self):
-        """Save log file"""
         try:
             with open(self.filepath, 'w') as f:
                 json.dump({
@@ -66,7 +84,6 @@ class LocalLog:
             logger.error(f"Could not save local log: {e}")
     
     def add_pending(self, action, student_id):
-        """Add a pending action to sync later"""
         self.pending_syncs.append({
             'action': action,
             'student_id': student_id,
@@ -76,7 +93,6 @@ class LocalLog:
         logger.info(f"Added pending: {action} for {student_id}")
     
     def remove_pending(self, action, student_id):
-        """Remove a synced action"""
         self.pending_syncs = [
             p for p in self.pending_syncs
             if not (p['action'] == action and p['student_id'] == student_id)
@@ -84,7 +100,6 @@ class LocalLog:
         self._save()
     
     def get_pending(self):
-        """Get all pending actions"""
         return self.pending_syncs.copy()
 
 
@@ -121,7 +136,14 @@ class WebhookClient:
         return None
     
     def check_borrow(self, student_id):
-        """Check if student can borrow (doesn't already have a box)"""
+        """
+        Check if student can borrow.
+        Returns tuple: (can_borrow: bool, reason: str)
+        
+        Rules:
+        - Student must EXIST in database
+        - Student must NOT already have a box
+        """
         logger.info(f"Checking borrow eligibility for {student_id}")
         
         result = self._post({
@@ -131,11 +153,23 @@ class WebhookClient:
         
         if result:
             can_borrow = result.get('can_borrow', False)
-            logger.info(f"Check result: can_borrow={can_borrow}")
-            return can_borrow
+            message = result.get('message', '')
+            
+            # Check if this is a new student (not in database)
+            if 'new student' in message.lower():
+                logger.info(f"Student {student_id} not found in database - DENIED")
+                return False, "not_registered"
+            
+            logger.info(f"Check result: can_borrow={can_borrow}, message={message}")
+            
+            if can_borrow:
+                return True, "ok"
+            else:
+                return False, "already_borrowed"
         
-        logger.warning("Could not verify - allowing borrow (offline mode)")
-        return True
+        # Webhook unreachable - DENY for safety (can't verify student)
+        logger.warning("Could not verify student - DENYING for safety")
+        return False, "offline"
     
     def record_borrow(self, student_id):
         """Record a borrow transaction"""
@@ -178,7 +212,6 @@ class LockerServer:
         self.running = False
     
     def open_rfcomm(self):
-        """Open rfcomm device"""
         try:
             if not os.path.exists(RFCOMM_DEVICE):
                 logger.info(f"Waiting for {RFCOMM_DEVICE}...")
@@ -193,7 +226,6 @@ class LockerServer:
             return False
     
     def close_rfcomm(self):
-        """Close rfcomm device"""
         if self.rfcomm:
             try:
                 self.rfcomm.close()
@@ -202,7 +234,6 @@ class LockerServer:
             self.rfcomm = None
     
     def send_response(self, response):
-        """Send response to TTGO"""
         if self.rfcomm:
             try:
                 msg = f"{response}\n".encode('utf-8')
@@ -218,17 +249,27 @@ class LockerServer:
         """Handle a borrow request"""
         logger.info(f"=== BORROW REQUEST: {student_id} ===")
         
-        if self.webhook.check_borrow(student_id):
+        # Check if student can borrow
+        can_borrow, reason = self.webhook.check_borrow(student_id)
+        
+        if can_borrow:
+            # Record the borrow
             if self.webhook.record_borrow(student_id):
                 self.send_response("OK")
                 logger.info(f"BORROW APPROVED for {student_id}")
             else:
+                # Webhook down for recording - still approve but log locally
                 self.local_log.add_pending('borrow', student_id)
                 self.send_response("OK")
-                logger.warning(f"BORROW APPROVED (offline) for {student_id}")
+                logger.warning(f"BORROW APPROVED (logged locally) for {student_id}")
         else:
             self.send_response("DENIED")
-            logger.info(f"BORROW DENIED for {student_id}")
+            if reason == "not_registered":
+                logger.info(f"BORROW DENIED for {student_id} - Student not in database")
+            elif reason == "already_borrowed":
+                logger.info(f"BORROW DENIED for {student_id} - Already has a box")
+            else:
+                logger.info(f"BORROW DENIED for {student_id} - {reason}")
     
     def handle_return(self, student_id):
         """Handle a return notification"""
@@ -238,6 +279,7 @@ class LockerServer:
             self.send_response("OK")
             logger.info(f"RETURN RECORDED for {student_id}")
         else:
+            # Webhook down - log locally for later sync
             self.local_log.add_pending('return', student_id)
             self.send_response("OK")
             logger.warning(f"RETURN LOGGED LOCALLY for {student_id}")
@@ -280,6 +322,7 @@ class LockerServer:
             command = parts[0]
             student_id = parts[1] if len(parts) > 1 else ""
         else:
+            # Legacy: just a student ID (assume borrow)
             command = "BORROW"
             student_id = message
         
@@ -353,7 +396,6 @@ class LockerServer:
         logger.info("Server stopped")
     
     def stop(self):
-        """Stop the server"""
         self.running = False
 
 
@@ -362,7 +404,7 @@ def main():
         webhook_url = sys.argv[1]
     else:
         webhook_url = DEFAULT_WEBHOOK_URL
-        print(f"Using default webhook URL")
+        print("Using default webhook URL")
     
     server = LockerServer(webhook_url)
     

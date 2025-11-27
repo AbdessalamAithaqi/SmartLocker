@@ -1,3 +1,6 @@
+#!/bin/bash
+# SmartLocker Pi Startup Script
+
 # config
 TTGO_MAC="14:2B:2F:A7:94:22"
 WEBHOOK_URL="https://script.google.com/macros/s/AKfycbwU7jvZcrGItGfxu3uS4Ux9vrXrL5ne9Lh0TXLLuW8OUCVsh6H6-UAUgRck5Nj89nfssw/exec"
