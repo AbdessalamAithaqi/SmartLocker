@@ -1,7 +1,3 @@
-// SmartLocker_TTGO.ino
-// ESP32 TTGO Smart Locker with Bluetooth SERVER mode
-// Pi connects to us via rfcomm
-
 #include "config.h"
 #include "lcd_display.h"
 #include "keypad.h"
@@ -10,9 +6,7 @@
 #include "ir.h"
 #include "bt_comm.h"
 
-// ============================================
 // STATE DEFINITIONS
-// ============================================
 enum class State {
   INIT,
   IDLE_AVAILABLE,       // Box is present, ready for borrow
@@ -27,9 +21,7 @@ enum class State {
   ERROR                 // Error state
 };
 
-// ============================================
 // GLOBAL OBJECTS
-// ============================================
 LCDDisplay lcd;
 LockerKeypad keypad;
 GreenLED greenLed;
@@ -38,9 +30,7 @@ BoxIR boxSensor;
 DoorIR doorSensor;
 LockerBluetooth bluetooth("SmartLockerTTGO");  // BT Server name
 
-// ============================================
 // STATE VARIABLES
-// ============================================
 State currentState = State::INIT;
 State previousState = State::INIT;
 
@@ -56,9 +46,6 @@ bool boxPresent = false;
 bool doorClosed = true;
 bool authRequestSent = false;
 
-// ============================================
-// SETUP
-// ============================================
 void setup() {
   Serial.begin(115200);
   Serial.println("\n=================================");
@@ -66,7 +53,7 @@ void setup() {
   Serial.println("Mode: Bluetooth SERVER");
   Serial.println("=================================");
   
-  // Initialize hardware
+  // Initialize all the hardware hardware
   lcd.begin();
   lcd.printLines("Smart Locker", "Initializing...");
   
@@ -76,7 +63,7 @@ void setup() {
   boxSensor.begin();
   doorSensor.begin();
   
-  // Initialize Bluetooth SERVER
+  // Initialize Bluetooth
   bluetooth.begin();
   
   // Initial state
@@ -94,12 +81,10 @@ void setup() {
   }
   
   Serial.println("\nSystem Ready!");
-  Serial.println("Waiting for Pi connection via Bluetooth...\n");
+  Serial.println("Waiting for Pi connection by Bluetooth..\n");
 }
 
-// ============================================
 // MAIN LOOP
-// ============================================
 void loop() {
   // Update sensors periodically
   if (millis() - lastSensorRead > SENSOR_DEBOUNCE_MS) {
@@ -114,9 +99,7 @@ void loop() {
   checkTimeouts();
 }
 
-// ============================================
-// STATE MACHINE
-// ============================================
+// STATE MACHINEs
 void processState() {
   switch (currentState) {
     case State::INIT:
@@ -165,10 +148,7 @@ void processState() {
   }
 }
 
-// ============================================
-// STATE HANDLERS
-// ============================================
-
+// HANDLERS because this was way too messy without it
 void handleIdleAvailable() {
   // Update display periodically
   if (millis() - lastDisplayUpdate > 3000) {
@@ -202,7 +182,7 @@ void handleIdleAvailable() {
 }
 
 void handleIdleOccupied() {
-  // Update display periodically
+  // Updatedisplay periodically
   if (millis() - lastDisplayUpdate > 3000) {
     lcd.printLines("Box Out", "# to return");
     greenLed.off();
@@ -217,7 +197,7 @@ void handleIdleOccupied() {
 }
 
 void handleAwaitingID() {
-  // First entry - show prompt
+  // first entry show prompt
   static bool promptShown = false;
   if (!promptShown) {
     lcd.printLines("Enter Student ID", "# to confirm");
@@ -270,7 +250,6 @@ void handleAwaitingID() {
 }
 
 void handleAuthenticating() {
-  // Send request if not sent yet
   if (!authRequestSent) {
     lcd.printLines("Authorizing...", currentStudentID);
     greenLed.off();
@@ -285,7 +264,6 @@ void handleAuthenticating() {
       return;
     }
     
-    // Send borrow request to Pi
     if (bluetooth.sendBorrowRequest(currentStudentID)) {
       Serial.println("Borrow request sent, waiting for response...");
       authRequestSent = true;
@@ -299,7 +277,6 @@ void handleAuthenticating() {
     }
   }
   
-  // Check for response from Pi
   String response = bluetooth.readResponse();
   
   if (response == "OK") {
@@ -319,7 +296,6 @@ void handleAuthenticating() {
     changeState(State::IDLE_AVAILABLE);
     
   } else if (response != "") {
-    // Unexpected response
     Serial.print("Unexpected response: ");
     Serial.println(response);
   }
@@ -339,7 +315,6 @@ void handleAuthenticating() {
 }
 
 void handleBorrowAuthorized() {
-  // Unlock door for user to take box
   doorServo.unlock();
   lcd.printLines("Door Unlocked", "Take box & close");
   greenLed.on();
@@ -348,8 +323,6 @@ void handleBorrowAuthorized() {
 }
 
 void handleBorrowInProgress() {
-  // Wait for user to open door and take box
-  
   if (!doorClosed) {
     // Door is open
     if (!boxPresent) {
@@ -362,7 +335,6 @@ void handleBorrowInProgress() {
       lcd.printLines("Door Open", "Take the box");
     }
   } else {
-    // Door still closed
     lcd.printLines("Open Door", "Take box inside");
   }
   
@@ -377,10 +349,7 @@ void handleBorrowInProgress() {
 }
 
 void handleBorrowCompleting() {
-  // Box removed, waiting for door to close
-  
   if (doorClosed && !boxPresent) {
-    // Door closed, box gone - success!
     doorServo.lock();
     lastBorrowerID = currentStudentID;
     
@@ -397,7 +366,6 @@ void handleBorrowCompleting() {
   } else if (!doorClosed) {
     lcd.printLines("Close Door", "To complete");
   } else if (boxPresent) {
-    // Box was put back? Go back to in-progress
     lcd.printLines("Take the box", "Then close door");
     changeState(State::BORROW_IN_PROGRESS);
   }
@@ -414,9 +382,7 @@ void handleReturnInProgress() {
   }
   
   if (!doorClosed) {
-    // Door is open
     if (boxPresent) {
-      // Box detected!
       Serial.println("Box placed in locker!");
       lcd.printLines("Box Detected!", "Close door");
       doorUnlocked = false;
@@ -429,7 +395,6 @@ void handleReturnInProgress() {
     lcd.printLines("Open Door", "Place box inside");
   }
   
-  // Blink green LED
   static unsigned long lastBlink = 0;
   if (millis() - lastBlink > 500) {
     static bool blinkState = false;
@@ -441,10 +406,8 @@ void handleReturnInProgress() {
 
 void handleReturnCompleting() {
   if (doorClosed && boxPresent) {
-    // Door closed, box present - success!
     doorServo.lock();
     
-    // Notify Pi about return
     if (bluetooth.isConnected() && lastBorrowerID.length() > 0) {
       bluetooth.sendReturnNotification(lastBorrowerID);
       Serial.print("Return logged for: ");
@@ -461,14 +424,12 @@ void handleReturnCompleting() {
   } else if (!doorClosed) {
     lcd.printLines("Close Door", "To complete");
   } else if (!boxPresent) {
-    // Box was removed again?
     lcd.printLines("Place box", "Then close door");
     changeState(State::RETURN_IN_PROGRESS);
   }
 }
 
 void handleError() {
-  // Blink green LED rapidly to indicate error
   static unsigned long lastBlink = 0;
   if (millis() - lastBlink > 200) {
     static bool blinkState = false;
@@ -486,10 +447,7 @@ void handleError() {
   }
 }
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
+// MORE HELPER FUNCTIONS
 void changeState(State newState) {
   if (currentState != newState) {
     Serial.print("[STATE] ");
@@ -500,7 +458,7 @@ void changeState(State newState) {
     previousState = currentState;
     currentState = newState;
     stateEntryTime = millis();
-    lastDisplayUpdate = 0;  // Force display update
+    lastDisplayUpdate = 0;
   }
 }
 
@@ -522,7 +480,6 @@ const char* stateToString(State state) {
 }
 
 void updateSensors() {
-  // Read sensors with averaging for stability
   static int boxReadings[3] = {0, 0, 0};
   static int doorReadings[3] = {0, 0, 0};
   static int readIndex = 0;
@@ -532,14 +489,12 @@ void updateSensors() {
   
   readIndex = (readIndex + 1) % 3;
   
-  // Calculate averages
   int boxAvg = (boxReadings[0] + boxReadings[1] + boxReadings[2]) / 3;
   int doorAvg = (doorReadings[0] + doorReadings[1] + doorReadings[2]) / 3;
   
   bool newBoxPresent = (boxAvg >= IR_BOX_THRESHOLD);
   bool newDoorClosed = (doorAvg >= IR_DOOR_THRESHOLD);
   
-  // Log changes
   if (newBoxPresent != boxPresent) {
     Serial.print("[SENSOR] Box: ");
     Serial.print(newBoxPresent ? "PRESENT" : "ABSENT");
@@ -595,7 +550,6 @@ void checkTimeouts() {
         if (boxPresent) {
           changeState(State::IDLE_AVAILABLE);
         } else {
-          // Box was taken, log the borrow
           lastBorrowerID = currentStudentID;
           changeState(State::IDLE_OCCUPIED);
         }
@@ -610,9 +564,7 @@ void checkTimeouts() {
         lcd.printLines("Timeout!", "Door locked");
         delay(3000);
         
-        // Check final state
         if (boxPresent) {
-          // Return was successful
           if (bluetooth.isConnected() && lastBorrowerID.length() > 0) {
             bluetooth.sendReturnNotification(lastBorrowerID);
           }
