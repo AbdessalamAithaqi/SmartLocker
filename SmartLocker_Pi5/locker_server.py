@@ -39,12 +39,11 @@ except ImportError:
 # Configuration
 RFCOMM_DEVICE = "/dev/rfcomm0"
 LOCAL_LOG_FILE = Path.home() / "smartlocker_log.json"
-WEBHOOK_TIMEOUT = 10  # seconds
+WEBHOOK_TIMEOUT = 10
 MAX_RETRIES = 3
-RETRY_DELAY = 1  # seconds
+RETRY_DELAY = 1
 DEFAULT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwU7jvZcrGItGfxu3uS4Ux9vrXrL5ne9Lh0TXLLuW8OUCVsh6H6-UAUgRck5Nj89nfssw/exec"
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -157,7 +156,7 @@ class WebhookClient:
             return can_borrow
         
         logger.warning("Could not verify - allowing borrow (offline mode)")
-        return True  # Allow if we can't verify
+        return True
     
     def record_borrow(self, student_id):
         """Record a borrow transaction"""
@@ -202,7 +201,6 @@ class LockerServer:
     def open_rfcomm(self):
         """Open rfcomm device"""
         try:
-            # Wait for device to exist
             if not os.path.exists(RFCOMM_DEVICE):
                 logger.info(f"Waiting for {RFCOMM_DEVICE}...")
                 return False
@@ -241,14 +239,11 @@ class LockerServer:
         """Handle a borrow request"""
         logger.info(f"=== BORROW REQUEST: {student_id} ===")
         
-        # Check if student can borrow
         if self.webhook.check_borrow(student_id):
-            # Record the borrow
             if self.webhook.record_borrow(student_id):
                 self.send_response("OK")
                 logger.info(f"BORROW APPROVED for {student_id}")
             else:
-                # Webhook down - allow anyway but log locally
                 self.local_log.add_pending('borrow', student_id)
                 self.send_response("OK")
                 logger.warning(f"BORROW APPROVED (offline) for {student_id}")
@@ -264,7 +259,6 @@ class LockerServer:
             self.send_response("OK")
             logger.info(f"RETURN RECORDED for {student_id}")
         else:
-            # Webhook down - log locally for later sync
             self.local_log.add_pending('return', student_id)
             self.send_response("OK")
             logger.warning(f"RETURN LOGGED LOCALLY for {student_id}")
@@ -302,23 +296,19 @@ class LockerServer:
         
         logger.info(f"Received from TTGO: {message}")
         
-        # Parse command
         if ',' in message:
             parts = message.split(',', 1)
             command = parts[0]
             student_id = parts[1] if len(parts) > 1 else ""
         else:
-            # Legacy: just a student ID (assume borrow)
             command = "BORROW"
             student_id = message
         
-        # Validate student ID
         if not student_id or len(student_id) < 8:
             logger.warning(f"Invalid student ID: {student_id}")
             self.send_response("DENIED")
             return
         
-        # Handle command
         if command == "BORROW":
             self.handle_borrow(student_id)
         elif command == "RETURN":
@@ -340,24 +330,20 @@ class LockerServer:
         
         while self.running:
             try:
-                # Try to open rfcomm if not open
                 if not self.rfcomm:
                     if not self.open_rfcomm():
                         time.sleep(1)
                         continue
                 
-                # Try to sync pending transactions periodically
                 now = time.time()
-                if now - last_sync_attempt > 60:  # Every minute
+                if now - last_sync_attempt > 60:
                     self.sync_pending()
                     last_sync_attempt = now
                 
-                # Read from TTGO
                 try:
                     data = self.rfcomm.read(1)
                     if data:
                         if data == b'\n':
-                            # Complete message
                             try:
                                 message = buffer.decode('utf-8')
                                 self.process_message(message)
@@ -367,7 +353,6 @@ class LockerServer:
                         elif data != b'\r':
                             buffer += data
                     else:
-                        # Connection closed
                         logger.warning("TTGO disconnected")
                         self.close_rfcomm()
                         time.sleep(1)
@@ -394,17 +379,14 @@ class LockerServer:
 
 
 def main():
-    # Use argument if provided, otherwise use hardcoded default
     if len(sys.argv) > 1:
         webhook_url = sys.argv[1]
     else:
         webhook_url = DEFAULT_WEBHOOK_URL
         print(f"Using default webhook URL")
     
-    # Create and run server
     server = LockerServer(webhook_url)
     
-    # Handle signals for clean shutdown
     def signal_handler(sig, frame):
         logger.info("Received shutdown signal")
         server.stop()
@@ -412,7 +394,6 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Run server
     server.run()
 
 
