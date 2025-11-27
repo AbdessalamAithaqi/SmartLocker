@@ -8,7 +8,7 @@ LED::LED(uint8_t pin)
 
 void LED::begin() {
   pinMode(_pin, OUTPUT);
-  off();  // start off
+  off();  // start as off
 }
 
 void LED::on() {

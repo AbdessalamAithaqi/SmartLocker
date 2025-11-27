@@ -1,20 +1,18 @@
 #include "bt_comm.h"
-#include "esp_spp_api.h"   // for SPP callback types
+#include "esp_spp_api.h"
 
-// Static instance pointer for callback
 LockerBluetooth* LockerBluetooth::_instance = nullptr;
 
-// Static callback function for SPP events (same pattern as working code)
 void LockerBluetooth::btCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
   if (_instance == nullptr) return;
   
   switch (event) {
-    case ESP_SPP_SRV_OPEN_EVT:   // Client (Pi) connected
+    case ESP_SPP_SRV_OPEN_EVT:   // Pi connected
       _instance->_clientConnected = true;
       Serial.println("[BT] Pi connected!");
       break;
 
-    case ESP_SPP_CLOSE_EVT:      // Client disconnected
+    case ESP_SPP_CLOSE_EVT:      // Pi disconnected
       _instance->_clientConnected = false;
       Serial.println("[BT] Pi disconnected");
       break;
@@ -32,15 +30,13 @@ LockerBluetooth::LockerBluetooth(const char* deviceName)
 }
 
 void LockerBluetooth::begin() {
-  // Register callback before starting (same as working code)
   _bt.register_callback(btCallback);
   
-  // Start as Bluetooth SPP SERVER
-  // The Pi will connect to us using rfcomm
+  // Start as Bluetooth SPP server
   if (!_bt.begin(_deviceName)) {
     Serial.println("[BT] ERROR: Failed to start Bluetooth!");
     while (true) {
-      delay(1000);  // Fatal error, hang
+      delay(1000);  
     }
   }
   
@@ -86,7 +82,6 @@ String LockerBluetooth::readResponse() {
     return "";
   }
   
-  // Check if data is available (same pattern as working code)
   if (_bt.available()) {
     String msg = _bt.readStringUntil('\n');
     msg.trim();
@@ -98,7 +93,6 @@ String LockerBluetooth::readResponse() {
       
       msg.toUpperCase();
 
-      // Normalize responses
       if (msg == "OK" || msg == "GRANTED" || msg == "SUCCESS") {
         return "OK";
       }
@@ -106,7 +100,6 @@ String LockerBluetooth::readResponse() {
         return "DENIED";
       }
       
-      // Return as-is for other messages
       return msg;
     }
   }

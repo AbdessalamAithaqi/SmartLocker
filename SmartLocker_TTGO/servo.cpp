@@ -5,8 +5,8 @@ DoorServo::DoorServo() {
 }
 
 void DoorServo::begin() {
-  _servo.setPeriodHertz(50);                       // standard servo frequency
-  _servo.attach(PIN_SERVO_LOCK, 500, 2500);        // standard pin and pulse range
+  _servo.setPeriodHertz(50);                      
+  _servo.attach(PIN_SERVO_LOCK, 500, 2500);      
 }
 
 void DoorServo::lock() {

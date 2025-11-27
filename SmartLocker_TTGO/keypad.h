@@ -9,10 +9,8 @@ public:
 
   void begin();
 
-  // returns 0 if no key, otherwise the char ('0'..'9', 'A'..'D', '*', '#')
   char getKey();
 
-  // Convenience overload: returns true if a key was read, stores it in outKey
   bool getKey(char &outKey);
 
 private:
